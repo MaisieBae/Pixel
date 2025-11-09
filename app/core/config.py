@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     WHEEL_SPIN_MIN: int = 2
     WHEEL_SPIN_MAX: int = 10
+    WHEEL_IMAGE_URL: str = "/admin/static/wheel/question.png"
+    WHEEL_PRE_TTS_DELAY_MS: int = 900    
     
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

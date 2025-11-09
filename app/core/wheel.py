@@ -15,7 +15,6 @@ DEFAULT_PRIZES: list[dict[str, Any]] = [
     {"name": "Mystery Prize", "weight": 10},
 ]
 
-
 def _read_lines(path: Path) -> list[str]:
     try:
         txt = path.read_text(encoding="utf-8")
@@ -49,7 +48,7 @@ def load_prizes(settings: Settings) -> list[dict[str, Any]]:
         return DEFAULT_PRIZES
 
 
-def weighted_choice(items: list[dict[str, Any]]) -> dict[str, Any]:
-    # items: [{name, weight}]
+def weighted_choice_index(items: list[dict[str, Any]]) -> int:
     weights = [max(1, int(it.get("weight", 1))) for it in items]
-    return random.choices(items, weights=weights, k=1)[0]
+    idx = random.choices(range(len(items)), weights=weights, k=1)[0]
+    return int(idx)

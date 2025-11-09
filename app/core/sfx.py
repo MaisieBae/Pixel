@@ -1,39 +1,39 @@
 from __future__ import annotations
-from pathlib import Path
-from fastapi import HTTPException
+from typing import Optional
 from app.core.overlay_bus import OverlayBus
-from app.core.config import Settings
 
+def _name_or_url(name_or_url: str) -> dict:
+    s = (name_or_url or "").strip()
+    # If it looks like a URL or already absolute path, keep as url; else treat as name
+    if s.startswith("http://") or s.startswith("https://") or s.startswith("/"):
+        return {"url": s}
+    return {"name": s}
 
-def list_sound_files(settings: Settings) -> list[str]:
-    base: Path = settings.sounds_path
-    if not base.exists():
-        base.mkdir(parents=True, exist_ok=True)
-    files: list[str] = []
-    for ext in ("*.wav", "*.mp3", "*.ogg"):
-        files.extend(sorted([p.name for p in base.glob(ext)]))
-    return files
-
-
-def validate_sound_file(settings: Settings, name: str) -> str:
-    # name can be bare ("ding") or with extension ("ding.wav")
-    p = Path(name)
-    candidate = settings.sounds_path / (p.name)
-    if candidate.exists() and candidate.is_file():
-        return candidate.name  # return the final name to serve via /media/sounds/<name>
-
-    # Try known extensions if none present
-    if "." not in p.name:
-        for ext in (".wav", ".mp3", ".ogg"):
-            candidate2 = settings.sounds_path / (p.name + ext)
-            if candidate2.exists() and candidate2.is_file():
-                return candidate2.name
-    raise HTTPException(status_code=404, detail=f"Sound not found: {name}")
-
-
-async def play_sfx(bus: OverlayBus, filename: str) -> None:
-    # Overlay will fetch from /media/sounds/<filename>
+async def play_sfx(bus: OverlayBus, name_or_url: str) -> None:
+    """
+    One-shot playback. Matches overlay_sfx.html listener:
+      { type: 'sfx', action: 'play', url?: string, name?: string }
+    """
     await bus.broadcast({
-        "type": "play_sfx",
-        "file": f"/media/sounds/{filename}",
+        "type": "sfx",
+        "action": "play",
+        **_name_or_url(name_or_url),
+    })
+
+async def loop_start(bus: OverlayBus, name_or_url: str) -> None:
+    """
+    Start looping playback. Matches overlay_sfx.html:
+      { type: 'sfx', action: 'loop-start', url?: string, name?: string }
+    """
+    await bus.broadcast({
+        "type": "sfx",
+        "action": "loop-start",
+        **_name_or_url(name_or_url),
+    })
+
+async def loop_stop(bus: OverlayBus) -> None:
+    """Stop looping playback. Matches overlay_sfx.html action 'loop-stop'."""
+    await bus.broadcast({
+        "type": "sfx",
+        "action": "loop-stop",
     })
