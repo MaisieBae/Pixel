@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Overlay SFX — Quick Test</h2>
+  <p>Load <code>/overlay/sfx.html</code> in an OBS Browser Source first, then click the test button.</p>
+  <form id="playtest" hx-post="/admin/api/play-test" hx-target="#play-result" hx-swap="innerHTML">
+    <button type="submit">▶️ Play Test Sound</button>
+  </form>
+  <div id="play-result" class="muted"></div>
+</section>
+
+<section class="card">
+  <h2>Available Sounds</h2>
+  {% if sounds %}
+    <ul class="list">
+      {% for s in sounds %}
+      <li>
+        <code>{{ s }}</code>
+        <button hx-post="/admin/api/play?name={{ s }}" hx-target="#play-result" hx-swap="innerHTML">Play</button>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No sound files found in <code>./sounds</code>. Drop .wav/.mp3/.ogg files there.</p>
+  {% endif %}
+</section>
+{% endblock %}
