@@ -1,20 +1,27 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, Depends, Request, status
+from fastapi import FastAPI, Depends, Request, status, Form
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
 from app.core.config import Settings
-from app.core.db import bootstrap
+from app.core.db import bootstrap, SessionLocal
 from app.core.overlay_bus import OverlayBus, overlay_ws_router
 from app.core.sfx import list_sound_files, validate_sound_file, play_sfx
+from app.core.models import User, Points, Transaction, Redeem, QueueItem, Cooldown
+from app.core.points import PointsService
+from app.core.redeems import RedeemsService
+from app.core.cooldowns import CooldownService
+from app.core.queue import QueueService
 
 
 def _admin_auth(settings: Settings, request: Request) -> None:
-    # If ADMIN_TOKEN is set, enforce X-Admin-Token for mutations.
     token = settings.ADMIN_TOKEN.strip()
     if not token:
         return
@@ -23,67 +30,127 @@ def _admin_auth(settings: Settings, request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token")
 
 
-def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(title="Joystick Bot — v1.0.0")
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-    # Bootstrap DB and folders
+
+def create_app(settings: Settings) -> FastAPI:
+    app = FastAPI(title="Joystick Bot — v1.1.0")
+
     bootstrap()
     settings.sounds_path.mkdir(parents=True, exist_ok=True)
 
-    # Shared overlay bus
     bus = OverlayBus()
 
-    # Templates & Static
     templates_dir = Path(__file__).parent / "templates"
     static_dir = Path(__file__).parent / "static"
     templates = Jinja2Templates(directory=str(templates_dir))
 
-    # Static routes
     app.mount("/admin/static", StaticFiles(directory=str(static_dir)), name="admin_static")
-
-    # Serve sounds as static files to overlay
     app.mount("/media/sounds", StaticFiles(directory=str(settings.sounds_path)), name="sounds")
 
-    # Overlay: SFX page (OBS browser source)
+    # Overlay endpoints
     @app.get("/overlay/sfx.html", response_class=HTMLResponse)
     async def overlay_sfx_page(request: Request):
         return templates.TemplateResponse("overlay_sfx.html", {"request": request})
 
-    # WebSocket endpoint for overlays
     app.include_router(overlay_ws_router(bus))
 
     # ---------- Admin Web UI ----------
-    admin_router = APIRouter()
+    admin = APIRouter()
 
-    @admin_router.get("/", response_class=HTMLResponse)
-    async def admin_index(request: Request):
+    @admin.get("/", response_class=HTMLResponse)
+    async def admin_index(request: Request, db: Session = Depends(get_db)):
         sounds = list_sound_files(settings)
-        return templates.TemplateResponse("admin_index.html", {"request": request, "sounds": sounds})
+        users = list(db.scalars(select(User).order_by(User.last_seen.desc()).limit(10)))
+        redeems = RedeemsService(db)
+        redeems.seed_defaults()
+        return templates.TemplateResponse("admin_index_v110.html", {
+            "request": request,
+            "sounds": sounds,
+            "users": users,
+            "redeems": redeems.list(),
+        })
 
-    @admin_router.post("/api/play-test")
+    # SFX test
+    @admin.post("/api/play-test")
     async def api_play_test(request: Request):
         _admin_auth(settings, request)
-        # Pick a default file if present, else 404
         sounds = list_sound_files(settings)
         if not sounds:
             raise HTTPException(status_code=404, detail="No sound files found in SOUNDS_DIR")
         await play_sfx(bus, sounds[0])
         return JSONResponse({"ok": True, "played": sounds[0]})
 
-    @admin_router.post("/api/play")
+    @admin.post("/api/play")
     async def api_play_named(request: Request, name: str):
         _admin_auth(settings, request)
         final = validate_sound_file(settings, name)
         await play_sfx(bus, final)
         return JSONResponse({"ok": True, "played": final})
 
-    @admin_router.get("/api/sounds")
-    async def api_list_sounds():
-        return JSONResponse({"files": list_sound_files(settings)})
+    # Users
+    @admin.post("/api/users/create")
+    async def api_users_create(request: Request, name: str = Form(...), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        u = ps.ensure_user(name=name)
+        return RedirectResponse(url="/admin", status_code=303)
 
-    app.include_router(admin_router, prefix="/admin", tags=["admin"])
+    @admin.post("/api/users/grant")
+    async def api_users_grant(request: Request, user_id: int = Form(...), amount: int = Form(...), reason: str = Form("admin grant"), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        ps.grant(user_id=user_id, amount=amount, reason=reason)
+        return RedirectResponse(url="/admin", status_code=303)
 
-    # Root redirect to admin
+    # Redeems CRUD
+    @admin.post("/api/redeems/upsert")
+    async def api_redeems_upsert(request: Request, key: str = Form(...), display_name: str = Form(...), cost: int = Form(...), enabled: int = Form(1), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.upsert(key=key.strip().lower(), display_name=display_name.strip(), cost=int(cost), enabled=bool(enabled))
+        return RedirectResponse(url="/admin", status_code=303)
+
+    @admin.post("/api/redeems/toggle")
+    async def api_redeems_toggle(request: Request, key: str = Form(...), enabled: int = Form(...), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.toggle(key, bool(enabled))
+        return RedirectResponse(url="/admin", status_code=303)
+
+    # Test a redeem (deduct points, set cooldown, enqueue)
+    @admin.post("/api/redeems/test")
+    async def api_redeems_test(request: Request, user_name: str = Form(...), key: str = Form(...), cooldown: int = Form(5), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.seed_defaults()
+        result = rs.redeem(user_name=user_name.strip(), key=key.strip(), cooldown_s=int(cooldown), queue_kind=key.strip(), payload={"source":"admin-test"})
+        if not result.get("ok"):
+            return JSONResponse(result, status_code=400)
+        return RedirectResponse(url="/admin", status_code=303)
+
+    # Queue listing API
+    @admin.get("/api/queue")
+    async def api_queue(db: Session = Depends(get_db)):
+        qs = QueueService(db)
+        items = [
+            {
+                "id": q.id,
+                "kind": q.kind,
+                "status": q.status,
+                "created_at": q.created_at.isoformat(timespec="seconds"),
+                "payload": q.payload_json,
+            } for q in qs.list()
+        ]
+        return JSONResponse({"items": items})
+
+    app.include_router(admin, prefix="/admin", tags=["admin"])
+
     @app.get("/")
     async def root():
         return RedirectResponse(url="/admin")

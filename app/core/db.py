@@ -2,6 +2,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from pathlib import Path
+from app.core.models import Base
 
 DB_PATH = Path("./data").resolve()
 DB_PATH.mkdir(parents=True, exist_ok=True)
@@ -12,7 +13,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 def bootstrap() -> None:
-    # Minimal bootstrap placeholder; real models arrive in v1.1.0
     with engine.connect() as conn:
         conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
         conn.commit()
+    # Create tables
+    Base.metadata.create_all(bind=engine)
