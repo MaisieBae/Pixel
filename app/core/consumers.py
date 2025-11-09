@@ -97,5 +97,73 @@ class QueueWorker:
             db.commit()
             return
 
+        if kind == 'spin':
+            import asyncio, random
+            from app.core.wheel import load_prizes, weighted_choice, load_spin_lines, load_prize_lines
+            from app.core.text import clamp_reply, sanitize_tts_text
+
+            user = (payload.get('user') or '').strip()
+            prizes = load_prizes(self.settings)
+            choice = weighted_choice(prizes)
+            prize_name = choice.get('name', 'A Prize')
+
+            # Timing
+            dur = random.randint(max(1,int(self.settings.WHEEL_SPIN_MIN)), max(int(self.settings.WHEEL_SPIN_MIN), int(self.settings.WHEEL_SPIN_MAX)))
+
+            # Pre‑spin line → TTS (no username prefix)
+            spin_lines = load_spin_lines(self.settings)
+            if spin_lines and spin_lines[0]:
+                pre = random.choice(spin_lines)
+                pre = pre.replace('{user}', user)
+                pre = clamp_reply(sanitize_tts_text(pre), 220, 2)
+                db.add(QueueItem(kind='tts', status='pending', payload_json={"user": user, "message": pre, "prefix": False, "source": "wheel"}))
+
+            # Overlay: start (rain on, loop sound)
+            try:
+                await self.bus.broadcast({
+                    'type':'wheel','action':'start','duration':dur,
+                    'loop': f"/media/sounds/{self.settings.WHEEL_SFX_LOOP}"
+                })
+            except Exception:
+                pass
+
+            # SFX start
+            try:
+                await play_sfx(self.bus, self.settings.WHEEL_SFX_START)
+            except Exception:
+                pass
+
+            # Wait for spin duration
+            await asyncio.sleep(dur)
+
+            # Overlay: stop spin visuals
+            try:
+                await self.bus.broadcast({'type':'wheel','action':'stop'})
+            except Exception:
+                pass
+
+            # Win SFX
+            try:
+                await play_sfx(self.bus, self.settings.WHEEL_SFX_WIN)
+            except Exception:
+                pass
+
+            # Overlay: show result (text + confetti)
+            try:
+                await self.bus.broadcast({'type':'wheel','action':'result','prize':prize_name})
+            except Exception:
+                pass
+
+            # Result line → TTS (no username prefix)
+            win_lines = load_prize_lines(self.settings)
+            if win_lines and win_lines[0]:
+                win = random.choice(win_lines)
+                win = win.replace('{user}', user).replace('{prize}', prize_name)
+                win = clamp_reply(sanitize_tts_text(win), 220, 2)
+                db.add(QueueItem(kind='tts', status='pending', payload_json={"user": user, "message": win, "prefix": False, "source": "wheel"}))
+
+            db.commit()
+            return
+            
         # Ignore other kinds here
         print(f"[worker] ignored kind: {kind}")

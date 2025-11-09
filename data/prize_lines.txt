@@ -1,0 +1,3 @@
+{user} wins {prize}! Throw the confetti and act surprised!
+Behold! {user} claimed {prize}! A most excellent spin.
+The wheel whispers… {prize}! Nicely done, {user}.

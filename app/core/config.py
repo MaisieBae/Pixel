@@ -40,7 +40,22 @@ class Settings(BaseSettings):
     PPLX_RANDOM_REPLY_PROB: float = 0.08
     PPLX_MAX_TOKENS: int = 200
     PPLX_TIMEOUT: int = 12
+    # Pixel reply limits
+    PIXEL_MAX_CHARS: int = 220
+    PIXEL_MAX_SENTENCES: int = 2
 
+    # Prize wheel
+    PRIZES_FILE: str = "./data/prizes.json"
+    SPIN_LINES_FILE: str = "./data/spin_lines.txt"
+    PRIZE_LINES_FILE: str = "./data/prize_lines.txt"
+
+    WHEEL_SFX_START: str = "wheel_start.wav"
+    WHEEL_SFX_LOOP: str = "wheel_loop.wav"
+    WHEEL_SFX_WIN: str = "wheel_win.wav"
+
+    WHEEL_SPIN_MIN: int = 2
+    WHEEL_SPIN_MAX: int = 10
+    
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

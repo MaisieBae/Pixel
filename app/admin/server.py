@@ -158,7 +158,10 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/overlay/sfx.html", response_class=HTMLResponse)
     async def overlay_sfx_page(request: Request):
         return templates.TemplateResponse("overlay_sfx.html", {"request": request})
-
+    @app.get("/overlay/wheel.html", response_class=HTMLResponse)
+    async def overlay_wheel_page(request: Request):
+        return templates.TemplateResponse("overlay_wheel.html", {"request": request})
+        
     app.include_router(overlay_ws_router(_bus))
 
     # ---------- Admin Web UI ----------

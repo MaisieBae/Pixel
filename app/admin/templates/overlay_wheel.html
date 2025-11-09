@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay — Prize Wheel</title>
+  <style>
+    html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+    .rain { position: fixed; inset: 0; pointer-events: none; }
+    .drop { position: absolute; width: 48px; height: 48px; background: url('/admin/static/wheel_drop.png') center/contain no-repeat; animation: fall 2.5s linear infinite; filter: drop-shadow(0 6px 10px rgba(0,0,0,.4)); }
+    @keyframes fall { from { transform: translateY(-60px) rotate(0deg); opacity: .9; } to { transform: translateY(110vh) rotate(180deg); opacity: .9; } }
+
+    #center { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 700 48px/1.1 'Segoe UI', system-ui, sans-serif; color: #ffe7a6; text-shadow: 0 2px 0 #a00, 0 6px 14px rgba(0,0,0,.6); opacity: 0; transition: opacity .25s ease; }
+    #prize { display: inline-block; transform-origin: center; }
+    .bounce { animation: bounce 1.2s ease both; }
+    @keyframes bounce { 0%{ transform: scale(0.2); } 60%{ transform: scale(1.15); } 100%{ transform: scale(1); } }
+
+    .confetti { position: fixed; inset:0; pointer-events:none; }
+    .c { position:absolute; width:8px; height:14px; background: hsl(var(--h) 80% 60%); transform: rotate(var(--r)); animation: conf 1.2s ease-out forwards; }
+    @keyframes conf { to { transform: translateY(60vh) rotate(calc(var(--r) + 250deg)); opacity: 0; } }
+
+    #ws { position: fixed; left: 10px; bottom: 8px; font: 12px sans-serif; color: #9ad; opacity: .6; }
+  </style>
+</head>
+<body>
+  <div class="rain" id="rain"></div>
+  <div id="center"><span id="prize"/></div>
+  <div class="confetti" id="confetti"></div>
+  <div id="ws">WS: <span id="state">connecting…</span></div>
+  <script>
+  (function(){
+    const state = document.getElementById('state');
+    const rain = document.getElementById('rain');
+    const center = document.getElementById('center');
+    const prizeEl = document.getElementById('prize');
+    const conf = document.getElementById('confetti');
+
+    let loopAudio = null;
+
+    function wsConnect(){
+      const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/overlay/ws`);
+      ws.onopen = ()=> state.textContent = 'connected';
+      ws.onclose = ()=> { state.textContent = 'disconnected'; setTimeout(wsConnect,1000); };
+      ws.onmessage = ev => {
+        try{ const msg = JSON.parse(ev.data); handle(msg); }catch(_){ }
+      };
+    }
+
+    function handle(msg){
+      if (!msg || msg.type !== 'wheel') return;
+      if (msg.action === 'start') startSpin(msg);
+      if (msg.action === 'stop') stopSpin(msg);
+      if (msg.action === 'result') showResult(msg);
+    }
+
+    function startSpin(msg){
+      makeRain(true);
+      // optional loop sound managed here so it truly loops
+      if (msg.loop){
+        if (loopAudio){ try{ loopAudio.pause(); }catch(_){} }
+        loopAudio = new Audio(msg.loop);
+        loopAudio.loop = true; loopAudio.volume = 1.0; loopAudio.play().catch(()=>{});
+      }
+    }
+
+    function stopSpin(msg){
+      makeRain(false);
+      if (loopAudio){ try{ loopAudio.pause(); }catch(_){} loopAudio = null; }
+    }
+
+    function showResult(msg){
+      prizeEl.textContent = msg.prize || '';
+      center.style.opacity = 1;
+      prizeEl.classList.remove('bounce');
+      // restart animation
+      void prizeEl.offsetWidth; prizeEl.classList.add('bounce');
+      burst();
+      setTimeout(()=>{ center.style.opacity = 0; }, 10000);
+    }
+
+    function makeRain(on){
+      rain.innerHTML = '';
+      if (!on) return;
+      for (let i=0;i<40;i++){
+        const d = document.createElement('div');
+        d.className = 'drop';
+        d.style.left = Math.random()*100 + 'vw';
+        d.style.animationDelay = (Math.random()*1.0) + 's';
+        d.style.opacity = (0.5 + Math.random()*0.5);
+        rain.appendChild(d);
+      }
+    }
+
+    function burst(){
+      conf.innerHTML = '';
+      for (let i=0;i<80;i++){
+        const c = document.createElement('div');
+        c.className = 'c';
+        c.style.left = (20+Math.random()*60)+'vw';
+        c.style.top = (30+Math.random()*40)+'vh';
+        c.style.setProperty('--h', Math.floor(Math.random()*360));
+        c.style.setProperty('--r', Math.floor(Math.random()*180)+'deg');
+        conf.appendChild(c);
+      }
+      setTimeout(()=> conf.innerHTML = '', 1400);
+    }
+
+    wsConnect();
+  })();
+  </script>
+</body>
+</html>
