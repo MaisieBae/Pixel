@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Chat Console {% if sim_mode %}<span class="muted">(Sim mode)</span>{% else %}<span class="muted">(Live token set)</span>{% endif %}</h2>
+  <form method="post" action="/admin/api/sim/chat" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <input name="user" placeholder="username" required />
+    <input name="text" placeholder="message (e.g., !sound tada)" required />
+    <button>Send</button>
+  </form>
+  <div class="muted" style="margin-top:6px">Tip: Try <code>!help</code></div>
+
+  <h3 style="margin-top:16px">Inject Event</h3>
+  <form method="post" action="/admin/api/sim/event" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <select name="kind">
+      <option value="follow">follow</option>
+      <option value="sub">sub</option>
+      <option value="tip">tip</option>
+      <option value="dropin">drop-in</option>
+    </select>
+    <input name="user" placeholder="username" />
+    <input name="months" type="number" step="1" value="1" style="width:80px" />
+    <input name="tokens" type="number" step="1" value="10" style="width:100px" />
+    <button>Inject</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Overlay SFX — Quick Test</h2>
+  <form id="playtest" hx-post="/admin/api/play-test" hx-target="#play-result" hx-swap="innerHTML">
+    <button type="submit">▶️ Play First Sound</button>
+  </form>
+  <div id="play-result" class="muted"></div>
+</section>
+
+<section class="card">
+  <h2>Users & Points</h2>
+  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+    <div style="flex:1; min-width:260px;">
+      <h3>Create User</h3>
+      <form method="post" action="/admin/api/users/create">
+        <input name="name" placeholder="username" required />
+        <button type="submit">Create</button>
+      </form>
+    </div>
+    <div style="flex:2; min-width:320px;">
+      <h3>Recent Users</h3>
+      {% if users %}
+      <table>
+        <thead><tr><th>User</th><th>Balance</th><th>Grant</th></tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.name }}</td>
+            <td>{{ u.points.balance if u.points else 0 }}</td>
+            <td>
+              <form method="post" action="/admin/api/users/grant" style="display:flex; gap:6px; align-items:center;">
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input name="amount" type="number" step="1" style="width:90px" placeholder="amount" required />
+                <input name="reason" style="width:160px" placeholder="reason" />
+                <button>Grant</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p class="muted">No users yet. Create one above or use the Chat Console.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Redeems</h2>
+  <div style="display:flex; gap:20px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:320px;">
+      <h3>Add / Update Redeem</h3>
+      <form method="post" action="/admin/api/redeems/upsert">
+        <input name="key" placeholder="key (e.g., tts)" required />
+        <input name="display_name" placeholder="Display Name" required />
+        <input name="cost" type="number" step="1" placeholder="Cost" required />
+        <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
+        <button type="submit">Save</button>
+      </form>
+    </div>
+    <div style="flex:2; min-width:360px;">
+      <h3>Registered</h3>
+      {% if redeems %}
+      <table>
+        <thead><tr><th>Key</th><th>Name</th><th>Cost</th><th>Enabled</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for r in redeems %}
+          <tr>
+            <td><code>{{ r.key }}</code></td>
+            <td>{{ r.display_name }}</td>
+            <td>{{ r.cost }}</td>
+            <td>{{ 'Yes' if r.enabled else 'No' }}</td>
+            <td>
+              <form method="post" action="/admin/api/redeems/toggle" style="display:inline-block">
+                <input type="hidden" name="key" value="{{ r.key }}" />
+                <input type="hidden" name="enabled" value="{{ 0 if r.enabled else 1 }}" />
+                <button>{{ 'Disable' if r.enabled else 'Enable' }}</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p class="muted">No redeems found.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Queue</h2>
+  <div id="queue-list" hx-get="/admin/api/queue" hx-trigger="load, every 3s" hx-swap="innerHTML">
+    Loading…
+  </div>
+</section>
+
+<section class="card">
+  <h2>Available Sounds</h2>
+  {% if sounds %}
+    <ul class="list">
+      {% for s in sounds %}
+      <li>
+        <code>{{ s }}</code>
+        <button hx-post="/admin/api/play?name={{ s }}" hx-target="#play-result" hx-swap="innerHTML">Play</button>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No sound files found in <code>./sounds</code>. Drop .wav/.mp3/.ogg files there.</p>
+  {% endif %}
+</section>
+{% endblock %}
