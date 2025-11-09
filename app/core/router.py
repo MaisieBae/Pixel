@@ -41,7 +41,6 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
     if cmd == "!tts":
         if not args:
             return {"ok": False, "say": "Usage: !tts <message>"}
-        # Queue cap anti-spam
         pending = len(list(db.scalars(select(QueueItem).where(QueueItem.kind=='tts', QueueItem.status=='pending'))))
         if pending >= max(1, settings.TTS_QUEUE_MAX):
             return {"ok": False, "say": "TTS queue is full, try again shortly."}
@@ -56,8 +55,14 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Queued TTS."}
 
     if cmd == "!pixel":
-        # Perplexity integration comes later. For now, just explain.
-        return {"ok": True, "say": "Pixel voice coming soon."}
+        if not args:
+            return {"ok": False, "say": "Usage: !pixel <message>"}
+        payload = {"user": user, "message": " ".join(args)}
+        # Cooldown a bit longer than !tts; adjust in admin if needed
+        result = rs.redeem(user, "pixel", cooldown_s=20, queue_kind="pixel", payload=payload)
+        if not result.get("ok"):
+            return {"ok": False, "say": result.get("error", "Pixel failed")}
+        return {"ok": True, "say": "Pixel is thinking…"}
 
     if cmd == "!sound":
         if not args:
@@ -97,7 +102,6 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Wheel is spinning!"}
 
     if cmd == "!clip":
-        # Future: OBS remote clip. For now, enqueue for parity.
         rs.queue.enqueue("clip", {"user": user})
         return {"ok": True, "say": "Clip requested."}
 

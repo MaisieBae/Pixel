@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime
-from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,16 +9,15 @@ from app.core.models import QueueItem
 from app.core.sfx import play_sfx
 from app.core.config import Settings
 from app.core.overlay_bus import OverlayBus
+from app.core.pixel import call_perplexity
 
 
 class QueueWorker:
-    """Polls the DB for pending QueueItem records and processes them.
+    """Processes non-TTS jobs. TTS remains consumed by /tts/*.
 
     Supported kinds:
       - 'sound': payload { 'sound': <filename> }
-
-    IMPORTANT: We deliberately **exclude 'tts'** from this worker so that
-    /tts/plain-next and /tts/text-next can consume TTS jobs via polling.
+      - 'pixel': payload { 'user': <name>, 'message': <text> } → calls Perplexity, then enqueues TTS
     """
 
     def __init__(self, bus: OverlayBus, settings: Settings, poll_interval: float = 0.25) -> None:
@@ -62,7 +60,7 @@ class QueueWorker:
                 db.commit()
 
     def _next_pending(self, db: Session) -> QueueItem | None:
-        # Only pick jobs that are NOT TTS
+        # Only pick jobs that are NOT TTS (tts is consumed by endpoints)
         stmt = (
             select(QueueItem)
             .where(QueueItem.status == 'pending', QueueItem.kind != 'tts')
@@ -85,5 +83,19 @@ class QueueWorker:
             await play_sfx(self.bus, filename)
             return
 
-        # Any other kinds are ignored here
+        if kind == 'pixel':
+            user = payload.get('user') or ''
+            msg  = payload.get('message') or ''
+            prompt = f"@{user}: {msg}" if user else msg
+            reply = await call_perplexity(self.settings, prompt)
+            # Final clamp using configured caps
+            from app.core.text import clamp_reply
+            reply = clamp_reply(reply, int(self.settings.PIXEL_MAX_CHARS), int(self.settings.PIXEL_MAX_SENTENCES))
+            tts_payload = {"user": user, "message": reply, "prefix": False, "source": "pixel"}
+            q = QueueItem(kind='tts', status='pending', payload_json=tts_payload)
+            db.add(q)
+            db.commit()
+            return
+
+        # Ignore other kinds here
         print(f"[worker] ignored kind: {kind}")

@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     TTS_QUEUE_MAX: int = 5
     TTS_COOLDOWN_SECONDS: int = 10
     TTS_PREFIX_USERNAME: bool = True
+    TTS_PRE_DELAY_MS: int = 1200
+
+    # Perplexity
+    PPLX_API_KEY: str = ""
+    PPLX_MODEL: str = "sonar-small-online"
+    PPLX_RANDOM_REPLY_PROB: float = 0.08
+    PPLX_MAX_TOKENS: int = 200
+    PPLX_TIMEOUT: int = 12
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio
+import asyncio, random
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Depends, Request, status, Form
@@ -21,7 +21,7 @@ from app.core.redeems import RedeemsService
 from app.core.cooldowns import CooldownService
 from app.core.queue import QueueService
 from app.core.joystick import JoystickClient, JoystickCallbacks
-from app.core.router import handle_chat
+from app.core.router import handle_chat, is_command
 from app.core.consumers import QueueWorker
 from app.core.tts import TTSService
 
@@ -59,6 +59,24 @@ async def _post_chat(text: str) -> None:
         print("[chat]", text)
 
 
+async def _maybe_random_pixel(user: str, text: str) -> None:
+    """Occasionally reply to normal chat (not commands), cost-free.
+    Enqueues a 'pixel' job that flows into TTS. Probability controlled by env.
+    """
+    global _settings
+    if not text or is_command(text):
+        return
+    prob = max(0.0, min(1.0, float(_settings.PPLX_RANDOM_REPLY_PROB)))
+    if random.random() > prob:
+        return
+    with SessionLocal() as db:
+        rs = RedeemsService(db)
+        rs.seed_defaults()
+        payload = {"user": user, "message": text}
+        # Enqueue directly without point deduction or cooldown (random replies)
+        rs.queue.enqueue("pixel", payload)
+
+
 async def _on_chat(user: str, text: str):
     global _settings
     with SessionLocal() as db:
@@ -66,6 +84,8 @@ async def _on_chat(user: str, text: str):
         say = result.get("say")
         if say:
             await _post_chat(f"@{user} {say}")
+    # Try random Pixel after command handling so we don't respond to commands
+    await _maybe_random_pixel(user, text)
 
 
 async def _on_follow(user: str):
@@ -120,7 +140,7 @@ def create_app(settings: Settings) -> FastAPI:
     global _bus, _js, _settings, _bg_tasks, _worker
     _settings = settings
 
-    app = FastAPI(title="Joystick Bot — v1.4.0")
+    app = FastAPI(title="Joystick Bot — v1.5.0")
 
     bootstrap()
     settings.sounds_path.mkdir(parents=True, exist_ok=True)
@@ -175,7 +195,7 @@ def create_app(settings: Settings) -> FastAPI:
         await play_sfx(_bus, final)
         return JSONResponse({"ok": True, "played": final})
 
-    # Chat console (Dev/Sim) — works in both sim and live modes
+    # Chat console (Dev/Sim)
     @admin.post("/api/sim/chat")
     async def api_sim_chat(request: Request, user: str = Form(...), text: str = Form(...)):
         _admin_auth(settings, request)
@@ -215,7 +235,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(admin, prefix="/admin", tags=["admin"])
 
-    # ---------- TTS endpoints (polled by your external bridge) ----------
+    # ---------- TTS endpoints ----------
     @app.get("/tts/plain-next", response_class=PlainTextResponse)
     async def tts_plain_next():
         with SessionLocal() as db:
