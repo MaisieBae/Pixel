@@ -13,6 +13,15 @@ from app.core.overlay_bus import OverlayBus
 
 
 class QueueWorker:
+    """Polls the DB for pending QueueItem records and processes them.
+
+    Supported kinds:
+      - 'sound': payload { 'sound': <filename> }
+
+    IMPORTANT: We deliberately **exclude 'tts'** from this worker so that
+    /tts/plain-next and /tts/text-next can consume TTS jobs via polling.
+    """
+
     def __init__(self, bus: OverlayBus, settings: Settings, poll_interval: float = 0.25) -> None:
         self.bus = bus
         self.settings = settings
@@ -53,9 +62,10 @@ class QueueWorker:
                 db.commit()
 
     def _next_pending(self, db: Session) -> QueueItem | None:
+        # Only pick jobs that are NOT TTS
         stmt = (
             select(QueueItem)
-            .where(QueueItem.status == 'pending')
+            .where(QueueItem.status == 'pending', QueueItem.kind != 'tts')
             .order_by(QueueItem.id.asc())
             .limit(1)
         )
@@ -69,11 +79,11 @@ class QueueWorker:
             filename = payload.get('sound')
             if not filename:
                 raise ValueError('sound payload missing filename')
-            # Verify the file exists on disk before broadcasting
             path = self.settings.sounds_path / filename
             if not path.exists() or not path.is_file():
                 raise FileNotFoundError(f'sound file not found on server: {filename}')
             await play_sfx(self.bus, filename)
             return
 
-        print(f"[worker] unsupported kind: {kind}")
+        # Any other kinds are ignored here
+        print(f"[worker] ignored kind: {kind}")
