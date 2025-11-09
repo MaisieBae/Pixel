@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, Depends, Request, status, Form
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -22,6 +22,8 @@ from app.core.cooldowns import CooldownService
 from app.core.queue import QueueService
 from app.core.joystick import JoystickClient, JoystickCallbacks
 from app.core.router import handle_chat
+from app.core.consumers import QueueWorker
+from app.core.tts import TTSService
 
 
 # Globals tied to app lifecycle
@@ -29,6 +31,7 @@ _bus: OverlayBus | None = None
 _js: JoystickClient | None = None
 _settings: Settings | None = None
 _bg_tasks: list[asyncio.Task] = []
+_worker: QueueWorker | None = None
 
 
 def _admin_auth(settings: Settings, request: Request) -> None:
@@ -86,20 +89,14 @@ async def _on_tip(user: str, tokens: int):
     with SessionLocal() as db:
         ps = PointsService(db)
         u = ps.ensure_user(user)
-        # Map tokens to tiers — values configurable in .env
-        amt = 25
         if tokens <= _settings.TIP_LOW_MAX:
-            amt = 25
-            tier = "low"
+            amt, tier = 25, 'low'
         elif tokens <= _settings.TIP_MEDIUM_MAX:
-            amt = 150
-            tier = "medium"
+            amt, tier = 150, 'medium'
         elif tokens <= _settings.TIP_HIGH_MAX:
-            amt = 500
-            tier = "high"
+            amt, tier = 500, 'high'
         else:
-            amt = 1500
-            tier = "extreme"
+            amt, tier = 1500, 'extreme'
         ps.grant(u.id, amount=amt, reason=f"tip:{tokens}:{tier}")
         await _post_chat(f"Thanks @{user} for the tip ({tokens})! +{amt} points")
 
@@ -113,17 +110,17 @@ async def _on_dropin(user: str):
 
 
 async def _rotate_notices():
-    global _js, _settings
+    global _settings
     while True:
         await asyncio.sleep(max(30, _settings.ROTATE_NOTICE_SECONDS))
         await _post_chat("Try !help — TTS, Pixel, Sound, Spin, Clip!")
 
 
 def create_app(settings: Settings) -> FastAPI:
-    global _bus, _js, _settings, _bg_tasks
+    global _bus, _js, _settings, _bg_tasks, _worker
     _settings = settings
 
-    app = FastAPI(title="Joystick Bot — v1.2.0")
+    app = FastAPI(title="Joystick Bot — v1.4.0")
 
     bootstrap()
     settings.sounds_path.mkdir(parents=True, exist_ok=True)
@@ -178,7 +175,7 @@ def create_app(settings: Settings) -> FastAPI:
         await play_sfx(_bus, final)
         return JSONResponse({"ok": True, "played": final})
 
-    # Chat console (Dev/Sim)
+    # Chat console (Dev/Sim) — works in both sim and live modes
     @admin.post("/api/sim/chat")
     async def api_sim_chat(request: Request, user: str = Form(...), text: str = Form(...)):
         _admin_auth(settings, request)
@@ -201,7 +198,37 @@ def create_app(settings: Settings) -> FastAPI:
             await _js.sim_push_dropin(user)
         return RedirectResponse(url="/admin", status_code=303)
 
+    # Queue listing API
+    @admin.get("/api/queue")
+    async def api_queue(db: Session = Depends(get_db)):
+        qs = QueueService(db)
+        items = [
+            {
+                "id": q.id,
+                "kind": q.kind,
+                "status": q.status,
+                "created_at": q.created_at.isoformat(timespec="seconds"),
+                "payload": q.payload_json,
+            } for q in qs.list()
+        ]
+        return JSONResponse({"items": items})
+
     app.include_router(admin, prefix="/admin", tags=["admin"])
+
+    # ---------- TTS endpoints (polled by your external bridge) ----------
+    @app.get("/tts/plain-next", response_class=PlainTextResponse)
+    async def tts_plain_next():
+        with SessionLocal() as db:
+            svc = TTSService(db, settings, _bus)
+            text = await svc.next_plain()
+            return text
+
+    @app.get("/tts/text-next")
+    async def tts_text_next():
+        with SessionLocal() as db:
+            svc = TTSService(db, settings, _bus)
+            text = await svc.next_plain()
+            return {"text": text}
 
     @app.get("/")
     async def root():
@@ -210,7 +237,7 @@ def create_app(settings: Settings) -> FastAPI:
     # --- Startup tasks ---
     @app.on_event("startup")
     async def _on_startup():
-        global _js, _bg_tasks
+        global _js, _bg_tasks, _worker
         _js = JoystickClient(settings.JOYSTICK_TOKEN, settings.JOYSTICK_ROOM_ID)
         _js.set_callbacks(JoystickCallbacks(
             on_chat=_on_chat,
@@ -220,15 +247,20 @@ def create_app(settings: Settings) -> FastAPI:
             on_dropin=_on_dropin,
         ))
         await _js.start()
+
         _bg_tasks.append(asyncio.create_task(_rotate_notices()))
+        _worker = QueueWorker(_bus, settings)
+        _bg_tasks.append(asyncio.create_task(_worker.start()))
 
     @app.on_event("shutdown")
     async def _on_shutdown():
-        global _js, _bg_tasks
+        global _js, _bg_tasks, _worker
         for t in _bg_tasks:
             t.cancel()
         _bg_tasks.clear()
         if _js:
             await _js.stop()
+        if _worker:
+            _worker.stop()
 
     return app

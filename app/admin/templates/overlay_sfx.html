@@ -7,26 +7,30 @@
   <style>
     html, body { margin:0; padding:0; background:transparent; }
     #status { position: fixed; left: 10px; top: 10px; font: 14px sans-serif; color: #9ad; opacity: 0.7; }
+    #last { position: fixed; left: 10px; top: 28px; font: 12px sans-serif; color: #bcd; opacity: 0.7; }
   </style>
 </head>
 <body>
   <div id="status">WS: <span id="ws-state">connecting…</span></div>
+  <div id="last">last: —</div>
   <script>
   (function(){
-    const wsStatus = document.getElementById('ws-state');
+    const wsState = document.getElementById('ws-state');
+    const last = document.getElementById('last');
     let ws;
 
     function connect(){
       const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
       const url = `${proto}://${location.host}/overlay/ws`;
       ws = new WebSocket(url);
-      ws.onopen = () => { wsStatus.textContent = 'connected'; };
-      ws.onclose = () => { wsStatus.textContent = 'disconnected — retrying'; setTimeout(connect, 1000); };
-      ws.onerror = () => { wsStatus.textContent = 'error'; };
+      ws.onopen = () => { wsState.textContent = 'connected'; };
+      ws.onclose = () => { wsState.textContent = 'disconnected — retrying'; setTimeout(connect, 1000); };
+      ws.onerror = () => { wsState.textContent = 'error'; };
       ws.onmessage = async (evt) => {
         try {
           const msg = JSON.parse(evt.data);
           if (msg && msg.type === 'play_sfx' && msg.file){
+            last.textContent = `last: ${new Date().toLocaleTimeString()} — ${msg.file}`;
             await playSound(msg.file);
           }
         } catch(e){ /* ignore */ }

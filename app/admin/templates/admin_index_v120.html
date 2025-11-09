@@ -116,9 +116,35 @@
 
 <section class="card">
   <h2>Queue</h2>
-  <div id="queue-list" hx-get="/admin/api/queue" hx-trigger="load, every 3s" hx-swap="innerHTML">
+  <div id="queue-list" hx-get="/admin/api/queue" hx-trigger="load, every 2s" hx-swap="innerHTML">
     Loading…
   </div>
+  <template id="qtpl">
+    <table>
+      <thead><tr><th>ID</th><th>Kind</th><th>Status</th><th>Created</th><th>Payload</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </template>
+  <script>
+  (function(){
+    const container = document.getElementById('queue-list');
+    const render = (data) => {
+      const tpl = document.getElementById('qtpl');
+      const root = tpl.content.cloneNode(true);
+      const tbody = root.querySelector('tbody');
+      for (const it of (data.items||[])){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${it.id}</td><td>${it.kind}</td><td>${it.status}</td><td>${it.created_at}</td><td><code>${JSON.stringify(it.payload)}</code></td>`;
+        tbody.appendChild(tr);
+      }
+      container.innerHTML = '';
+      container.appendChild(root);
+    };
+    document.addEventListener('htmx:afterOnLoad', (ev)=>{
+      try{ render(JSON.parse(ev.detail.xhr.responseText)); }catch(e){ /* ignore */ }
+    });
+  })();
+  </script>
 </section>
 
 <section class="card">

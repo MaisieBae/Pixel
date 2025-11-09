@@ -1,10 +1,12 @@
 from __future__ import annotations
 from typing import Sequence
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from app.core.points import PointsService
 from app.core.redeems import RedeemsService
 from app.core.sfx import validate_sound_file
 from app.core.config import Settings
+from app.core.models import QueueItem
 
 
 HELP_TEXT = (
@@ -33,32 +35,33 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
     cmd = words[0].lower()
     args = words[1:]
 
-    # --- Commands ---
     if cmd == "!help":
         return {"ok": True, "say": HELP_TEXT}
 
     if cmd == "!tts":
         if not args:
             return {"ok": False, "say": "Usage: !tts <message>"}
-        payload = {"user": user, "message": " ".join(args)}
-        result = rs.redeem(user, "tts", cooldown_s=15, queue_kind="tts", payload=payload)
+        # Queue cap anti-spam
+        pending = len(list(db.scalars(select(QueueItem).where(QueueItem.kind=='tts', QueueItem.status=='pending'))))
+        if pending >= max(1, settings.TTS_QUEUE_MAX):
+            return {"ok": False, "say": "TTS queue is full, try again shortly."}
+        payload = {
+            "user": user,
+            "message": " ".join(args),
+            "prefix": bool(settings.TTS_PREFIX_USERNAME),
+        }
+        result = rs.redeem(user, "tts", cooldown_s=max(1, settings.TTS_COOLDOWN_SECONDS), queue_kind="tts", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "TTS failed")}
         return {"ok": True, "say": "Queued TTS."}
 
     if cmd == "!pixel":
-        if not args:
-            return {"ok": False, "say": "Usage: !pixel <message>"}
-        payload = {"user": user, "message": " ".join(args)}
-        result = rs.redeem(user, "pixel", cooldown_s=20, queue_kind="pixel", payload=payload)
-        if not result.get("ok"):
-            return {"ok": False, "say": result.get("error", "Pixel failed")}
-        return {"ok": True, "say": "Pixel is thinking…"}
+        # Perplexity integration comes later. For now, just explain.
+        return {"ok": True, "say": "Pixel voice coming soon."}
 
     if cmd == "!sound":
         if not args:
             return {"ok": False, "say": "Usage: !sound <name>"}
-        # Validate existence now (maps bare name → actual file with extension)
         try:
             actual = validate_sound_file(settings, args[0])
         except Exception:
@@ -73,8 +76,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         page = 1
         if args and args[0].isdigit():
             page = max(1, int(args[0]))
-        files = settings.sounds_path.glob("*")
-        names = [p.name for p in files if p.is_file() and p.suffix.lower() in (".wav", ".mp3", ".ogg")]
+        names = [p.name for p in settings.sounds_path.glob("*") if p.is_file() and p.suffix.lower() in (".wav", ".mp3", ".ogg")]
         names.sort()
         per_page = 15
         start = (page - 1) * per_page
@@ -95,12 +97,8 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Wheel is spinning!"}
 
     if cmd == "!clip":
-        # Just enqueue a clip request; later versions will call obs remote
-        payload = {"user": user}
-        # We'll treat clip as a zero-cost action (or later make it a redeem)
-        # For now, place in queue without point deduction by using queue directly
-        qres = rs.queue.enqueue("clip", payload)
+        # Future: OBS remote clip. For now, enqueue for parity.
+        rs.queue.enqueue("clip", {"user": user})
         return {"ok": True, "say": "Clip requested."}
 
-    # Unknown command → optional help
     return {"ok": True, "say": HELP_TEXT}

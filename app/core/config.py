@@ -16,16 +16,22 @@ class Settings(BaseSettings):
 
     # Joystick
     JOYSTICK_TOKEN: str = ""
-    JOYSTICK_ROOM_ID: str = ""   # set if your integration needs it
+    JOYSTICK_ROOM_ID: str = ""
 
     # Rotating notices
     ROTATE_NOTICE_SECONDS: int = 300
 
-    # Tip tiers (inclusive upper bounds)
+    # Tip tiers
     TIP_LOW_MAX: int = 14
     TIP_MEDIUM_MAX: int = 100
     TIP_HIGH_MAX: int = 500
     TIP_EXTREME_MAX: int = 1000
+
+    # TTS
+    TTS_PRE_SOUND: str = "announcement.wav"
+    TTS_QUEUE_MAX: int = 5
+    TTS_COOLDOWN_SECONDS: int = 10
+    TTS_PREFIX_USERNAME: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

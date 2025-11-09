@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import json
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
@@ -24,8 +23,11 @@ class JoystickCallbacks:
 class JoystickClient:
     """Simple adapter wrapper.
 
-    If token is empty -> Dev/Sim mode with an internal queue you can push events into.
-    If token is present -> TODO: replace _run_real() with actual network code per your channel.
+    If token is empty -> Dev/Sim mode with internal queue.
+    If token is present -> Real mode placeholder (network ingest TBD).
+
+    NEW: sim_push_* now dispatch immediately in BOTH modes, so the Admin Chat Console
+    always works (even when a real token is configured).
     """
 
     def __init__(self, token: str, room_id: str | None = None) -> None:
@@ -34,7 +36,6 @@ class JoystickClient:
         self._cbs = JoystickCallbacks()
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
-        # Dev sim queue for events
         self._sim_queue: asyncio.Queue[tuple[str, dict]] = asyncio.Queue()
 
     def set_callbacks(self, cbs: JoystickCallbacks) -> None:
@@ -52,24 +53,24 @@ class JoystickClient:
 
     async def send_chat(self, text: str) -> None:
         # TODO: implement chat post to Joystick API when in real mode
-        # For now just print to console (server log)
         print(f"[joystick] (send_chat) {text}")
 
-    # --- Dev/Sim helpers ---
+    # --- Dev/Sim helpers (now work in ALL modes) ---
     async def sim_push_chat(self, user: str, text: str) -> None:
-        await self._sim_queue.put(("chat", {"user": user, "text": text}))
+        # Dispatch immediately so admin console works in live mode too
+        await self._dispatch('chat', { 'user': user, 'text': text })
 
     async def sim_push_follow(self, user: str) -> None:
-        await self._sim_queue.put(("follow", {"user": user}))
+        await self._dispatch('follow', { 'user': user })
 
     async def sim_push_sub(self, user: str, months: int) -> None:
-        await self._sim_queue.put(("sub", {"user": user, "months": months}))
+        await self._dispatch('sub', { 'user': user, 'months': months })
 
     async def sim_push_tip(self, user: str, tokens: int) -> None:
-        await self._sim_queue.put(("tip", {"user": user, "tokens": tokens}))
+        await self._dispatch('tip', { 'user': user, 'tokens': tokens })
 
     async def sim_push_dropin(self, user: str) -> None:
-        await self._sim_queue.put(("dropin", {"user": user}))
+        await self._dispatch('dropin', { 'user': user })
 
     # --- Internals ---
     async def _run(self) -> None:
