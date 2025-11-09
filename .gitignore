@@ -1,0 +1,28 @@
+﻿# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Builds / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs & local DBs
+*.log
+*.sqlite
+*.db
