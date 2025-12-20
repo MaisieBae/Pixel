@@ -56,8 +56,14 @@ class Settings(BaseSettings):
     WHEEL_SPIN_MIN: int = 2
     WHEEL_SPIN_MAX: int = 10
     WHEEL_IMAGE_URL: str = "/admin/static/wheel/question.png"
-    WHEEL_PRE_TTS_DELAY_MS: int = 900    
-    
+    WHEEL_PRE_TTS_DELAY_MS: int = 900
+
+    # v1.6.4 — visual tunables
+    WHEEL_RAIN_DENSITY: int = 38          # how many falling icons
+    WHEEL_SHAKE_MS: int = 900             # shake duration before reveal
+    WHEEL_CONFETTI_COUNT: int = 120       # number of confetti pieces
+    WHEEL_TEXT_MAX_WIDTH: int = 70        # max width in "ch" (rough characters)
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
