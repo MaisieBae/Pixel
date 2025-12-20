@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import asyncio
+import json
 
 
 class OverlayBus:
@@ -41,8 +42,21 @@ def overlay_ws_router(bus: OverlayBus) -> APIRouter:
         await bus.connect(ws)
         try:
             while True:
-                # We don't currently consume messages from overlay; keep alive
-                await ws.receive_text()
+                # Clients (like Admin Quick Spin) may send JSON we should rebroadcast.
+                # Overlays usually send nothing; that's fine.
+                raw = await ws.receive_text()
+                if not raw:
+                    continue
+
+                # If it's JSON, rebroadcast it.
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+
+                if isinstance(msg, dict) and msg.get("type"):
+                    await bus.broadcast(msg)
+
         except WebSocketDisconnect:
             pass
         except Exception:

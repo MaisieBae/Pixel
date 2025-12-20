@@ -136,6 +136,13 @@ async def _rotate_notices():
         await _post_chat("Try !help — TTS, Pixel, Sound, Spin, Clip!")
 
 
+def _wants_json(request: Request) -> bool:
+    # HTMX sets HX-Request: true; also allow explicit Accept JSON
+    hx = (request.headers.get("HX-Request") or "").lower() == "true"
+    accept = (request.headers.get("accept") or "").lower()
+    return hx or ("application/json" in accept)
+
+
 def create_app(settings: Settings) -> FastAPI:
     global _bus, _js, _settings, _bg_tasks, _worker
     _settings = settings
@@ -158,10 +165,11 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/overlay/sfx.html", response_class=HTMLResponse)
     async def overlay_sfx_page(request: Request):
         return templates.TemplateResponse("overlay_sfx.html", {"request": request})
+
     @app.get("/overlay/wheel.html", response_class=HTMLResponse)
     async def overlay_wheel_page(request: Request):
         return templates.TemplateResponse("overlay_wheel.html", {"request": request})
-        
+
     app.include_router(overlay_ws_router(_bus))
 
     # ---------- Admin Web UI ----------
@@ -207,7 +215,13 @@ def create_app(settings: Settings) -> FastAPI:
         return RedirectResponse(url="/admin", status_code=303)
 
     @admin.post("/api/sim/event")
-    async def api_sim_event(request: Request, kind: str = Form(...), user: str = Form("Tester"), tokens: int = Form(0), months: int = Form(1)):
+    async def api_sim_event(
+        request: Request,
+        kind: str = Form(...),
+        user: str = Form("Tester"),
+        tokens: int = Form(0),
+        months: int = Form(1),
+    ):
         _admin_auth(settings, request)
         if not _js:
             return RedirectResponse(url="/admin", status_code=303)
@@ -219,6 +233,18 @@ def create_app(settings: Settings) -> FastAPI:
             await _js.sim_push_tip(user, tokens)
         elif kind == "dropin":
             await _js.sim_push_dropin(user)
+        return RedirectResponse(url="/admin", status_code=303)
+
+    # ✅ Admin Quick Spin (no points / no cooldown)
+    @admin.post("/api/spin/quick")
+    async def api_spin_quick(request: Request, user: str = Form("Tester")):
+        _admin_auth(settings, request)
+        who = (user or "Tester").strip() or "Tester"
+        with SessionLocal() as db:
+            qs = QueueService(db)
+            qid = qs.enqueue("spin", {"user": who, "admin_quick": True})
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "queued": qid, "user": who})
         return RedirectResponse(url="/admin", status_code=303)
 
     # Queue listing API
