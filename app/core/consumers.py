@@ -142,8 +142,10 @@ class QueueWorker:
                 pass
             try:
                 await self.bus.broadcast({
-                    'type':'wheel','action':'rain-start',
-                    'image': self.settings.WHEEL_IMAGE_URL
+                    'type': 'wheel',
+                    'action': 'rain-start',
+                    'image': self.settings.WHEEL_IMAGE_URL,
+                    'density': int(getattr(self.settings, "WHEEL_RAIN_DENSITY", 38)),
                 })
             except Exception:
                 pass
@@ -167,9 +169,13 @@ class QueueWorker:
             # (5) reveal animation
             try:
                 await self.bus.broadcast({
-                    'type':'wheel','action':'reveal',
+                    'type': 'wheel',
+                    'action': 'reveal',
                     'image': self.settings.WHEEL_IMAGE_URL,
-                    'prize': prize_name
+                    'prize': prize_name,
+                    'shakeMs': int(getattr(self.settings, "WHEEL_SHAKE_MS", 900)),
+                    'confettiCount': int(getattr(self.settings, "WHEEL_CONFETTI_COUNT", 120)),
+                    'textMaxWidth': int(getattr(self.settings, "WHEEL_TEXT_MAX_WIDTH", 70)),
                 })
             except Exception:
                 pass

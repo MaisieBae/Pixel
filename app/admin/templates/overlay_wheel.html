@@ -3,37 +3,110 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Overlay — Wheel Rain</title>
+  <title>Overlay — Wheel</title>
   <style>
+    :root{
+      --wheel-text-max-ch: 70;
+    }
+
     html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
 
     /* Rain */
     .rain { position: fixed; inset: 0; pointer-events: none; }
-    .drop { position: absolute; width: 96px; height: 96px; background-size: contain; background-repeat: no-repeat; background-position:center; animation: fall 2.4s linear infinite; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); }
-    @keyframes fall { from { transform: translateY(-120px) rotate(0deg); opacity: .95; } to { transform: translateY(110vh) rotate(220deg); opacity: .95; } }
-
-    /* Center popup + text */
-    #center { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); display:grid; place-items:center; gap: 18px; opacity: 0; pointer-events:none; }
-    #big { width: 360px; height: 360px; background-size: contain; background-repeat:no-repeat; background-position:center; filter: drop-shadow(0 12px 24px rgba(0,0,0,.6)); transition: transform .35s ease, opacity .35s ease; }
-    #big.hide { transform: scale(.2); opacity: 0; }
-    #prize { font: 900 56px/1.05 'Segoe UI', system-ui, sans-serif; color: #ffe7a6; text-shadow: 0 2px 0 #a00, 0 6px 14px rgba(0,0,0,.6); white-space: nowrap; }
-
-    .shake { animation: shake 0.9s ease both; }
-    @keyframes shake {
-      0%{ transform: translate(-50%, -50%) scale(1.15) rotate(0deg); }
-      20%{ transform: translate(-49%, -50%) scale(1.15) rotate(3deg); }
-      40%{ transform: translate(-51%, -49%) scale(1.15) rotate(-3deg); }
-      60%{ transform: translate(-50%, -51%) scale(1.15) rotate(2deg); }
-      80%{ transform: translate(-50%, -50%) scale(1.15) rotate(-2deg); }
-      100%{ transform: translate(-50%, -50%) scale(1.0) rotate(0); }
+    .drop {
+      position: absolute;
+      width: 96px; height: 96px;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position:center;
+      animation: fall 2.4s linear infinite;
+      filter: drop-shadow(0 6px 14px rgba(0,0,0,.55));
+      opacity: .9;
+    }
+    @keyframes fall {
+      from { transform: translateY(-120px) rotate(0deg); }
+      to   { transform: translateY(110vh) rotate(220deg); }
     }
 
-    /* Confetti */
-    .confetti { position: fixed; inset:0; pointer-events:none; }
-    .c { position:absolute; width:10px; height:16px; background: hsl(var(--h) 80% 60%); transform: rotate(var(--r)); animation: conf 1.3s ease-out forwards; }
-    @keyframes conf { to { transform: translateY(64vh) rotate(calc(var(--r) + 280deg)); opacity: 0; } }
+    /* Center popup + text */
+    #center {
+      position: fixed;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      display:grid;
+      place-items:center;
+      gap: 18px;
+      opacity: 0;
+      pointer-events:none;
+    }
+    #big {
+      width: 360px; height: 360px;
+      background-size: contain;
+      background-repeat:no-repeat;
+      background-position:center;
+      filter: drop-shadow(0 12px 24px rgba(0,0,0,.6));
+      transition: transform .35s ease, opacity .35s ease;
+    }
+    #big.hide { transform: scale(.2); opacity: 0; }
 
-    #ws { position: fixed; left: 10px; bottom: 8px; font: 12px sans-serif; color: #9ad; opacity: .6; }
+    /* Prize text — large, centered, auto-fit */
+    #prize {
+      color: #ffe7a6;
+      text-shadow: 0 2px 0 #a00, 0 6px 14px rgba(0,0,0,.6);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: .3px;
+      text-align: center;
+      display:none;
+    }
+    #prizeInner {
+      display:inline-block;
+      max-width: calc(var(--wheel-text-max-ch) * 1ch);
+      /* font-size is controlled dynamically by JS */
+    }
+
+    /* Shake animation (duration overridden per spin via JS) */
+    .shake {
+      animation-name: shake;
+      animation-duration: 0.9s;
+      animation-timing-function: ease;
+      animation-fill-mode: both;
+    }
+    @keyframes shake {
+      0%{   transform: translate(-50%, -50%) scale(1.15) rotate(0deg); }
+      20%{  transform: translate(-49%, -50%) scale(1.15) rotate(3deg); }
+      40%{  transform: translate(-51%, -49%) scale(1.15) rotate(-3deg); }
+      60%{  transform: translate(-50%, -51%) scale(1.15) rotate(2deg); }
+      80%{  transform: translate(-50%, -50%) scale(1.15) rotate(-2deg); }
+      100%{ transform: translate(-50%, -50%) scale(1.0)  rotate(0); }
+    }
+
+    /* Confetti (DOM-based, auto-clears) */
+    .confetti { position: fixed; inset:0; pointer-events:none; }
+    .c {
+      position:absolute;
+      width:10px; height:16px;
+      background: hsl(var(--h) 80% 60%);
+      transform: rotate(var(--r));
+      animation: conf 1.3s ease-out forwards;
+    }
+    @keyframes conf {
+      to {
+        transform: translateY(64vh) rotate(calc(var(--r) + 280deg));
+        opacity: 0;
+      }
+    }
+
+    #ws {
+      position: fixed;
+      left: 10px; bottom: 8px;
+      font: 12px sans-serif;
+      color: #9ad;
+      opacity: .6;
+    }
   </style>
 </head>
 <body>
@@ -41,7 +114,7 @@
 
   <div id="center">
     <div id="big"></div>
-    <div id="prize"></div>
+    <div id="prize"><span id="prizeInner"></span></div>
   </div>
 
   <div class="confetti" id="confetti"></div>
@@ -49,81 +122,161 @@
 
   <script>
   (function(){
-    const state = document.getElementById('state');
-    const rain  = document.getElementById('rain');
-    const center = document.getElementById('center');
-    const big = document.getElementById('big');
-    const prizeTxt = document.getElementById('prize');
-    const conf = document.getElementById('confetti');
+    const state   = document.getElementById('state');
+    const rain    = document.getElementById('rain');
+    const center  = document.getElementById('center');
+    const big     = document.getElementById('big');
+    const prize   = document.getElementById('prize');
+    const prizeInner = document.getElementById('prizeInner');
+    const conf    = document.getElementById('confetti');
+    const root    = document.documentElement;
+
+    let busy = false;      // guard: avoid overlapping reveals
+    let rainDrops = [];    // track drops so we can remove them
+
+    // --- Rain ---
+    function startRain(msg){
+      stopRain();
+      const img = msg.image || '/admin/static/wheel/question.png';
+      const density = (msg.density != null) ? Number(msg.density) : 38;
+      const n = Math.max(0, density);
+      for (let i=0;i<n;i++){
+        const d = document.createElement('div');
+        d.className = 'drop';
+        d.style.left = (Math.random()*100) + 'vw';
+        d.style.animationDelay = (Math.random()*1.0) + 's';
+        d.style.opacity = (0.55 + Math.random()*0.45);
+        d.style.backgroundImage = `url(${img})`;
+        rain.appendChild(d);
+        rainDrops.push(d);
+      }
+    }
+    function stopRain(){
+      for (const d of rainDrops) d.remove();
+      rainDrops = [];
+    }
+
+    // --- Confetti ---
+    function burstConfetti(count){
+      conf.innerHTML = '';
+      const n = (count != null) ? Number(count) : 120;
+      const total = Math.max(0, n);
+      for (let i=0;i<total;i++){
+        const c = document.createElement('div');
+        c.className = 'c';
+        c.style.left = (35 + Math.random()*30) + 'vw';
+        c.style.top  = (30 + Math.random()*20) + 'vh';
+        c.style.setProperty('--h', String(Math.floor(Math.random()*360)));
+        c.style.setProperty('--r', String(Math.floor(Math.random()*180)) + 'deg');
+        conf.appendChild(c);
+      }
+      // Hard clear so it never lingers
+      setTimeout(() => { conf.innerHTML = ''; }, 1600);
+    }
+
+    // --- Prize text autosize (≤2 lines within max width) ---
+    function setTextMaxCh(ch){
+      const val = (ch != null) ? Number(ch) : 70;
+      const clamped = Math.max(30, Math.min(90, val || 70));
+      root.style.setProperty('--wheel-text-max-ch', clamped);
+    }
+
+    function autoFitText(el, maxPx, minPx){
+      const parent = el.parentElement;
+      if (!parent) return;
+      const boundsW = parent.getBoundingClientRect().width || 1;
+      let lo = minPx, hi = maxPx, best = minPx;
+      while (lo <= hi){
+        const mid = (lo + hi) >> 1;
+        el.style.fontSize = mid + 'px';
+        const r = el.getBoundingClientRect();
+        const lineHeight = mid * 1.05;
+        const lines = Math.max(1, Math.round(r.height / lineHeight));
+        if (r.width <= boundsW && lines <= 2){
+          best = mid;
+          lo = mid + 1;
+        }else{
+          hi = mid - 1;
+        }
+      }
+      el.style.fontSize = best + 'px';
+    }
+
+    function showPrizeText(text, textMaxWidth){
+      setTextMaxCh(textMaxWidth);
+      prizeInner.textContent = text || '';
+      prize.style.display = 'block';
+      // Give layout a tick before measuring
+      requestAnimationFrame(() => {
+        autoFitText(prizeInner, 64, 20);
+      });
+    }
+
+    function hidePrizeText(){
+      prize.style.display = 'none';
+      prizeInner.textContent = '';
+    }
+
+    // --- Reveal sequence ---
+    function reveal(msg){
+      if (busy) return;
+      busy = true;
+
+      // Ensure rain is stopped
+      stopRain();
+
+      const img = msg.image || '/admin/static/wheel/question.png';
+      big.classList.remove('hide');
+      big.style.backgroundImage = `url(${img})`;
+      hidePrizeText();
+
+      center.style.opacity = 1;
+
+      const shakeMs = (msg.shakeMs != null) ? Number(msg.shakeMs) : 900;
+      const confCount = (msg.confettiCount != null) ? Number(msg.confettiCount) : 120;
+      const textMaxWidth = (msg.textMaxWidth != null) ? Number(msg.textMaxWidth) : 70;
+      const prizeText = msg.prize || '';
+
+      // Set animation duration dynamically
+      center.style.animationDuration = Math.max(0, shakeMs) + 'ms';
+      center.classList.remove('shake'); void center.offsetWidth; center.classList.add('shake');
+
+      // At the exact end of the shake:
+      setTimeout(() => {
+        burstConfetti(confCount);
+        big.classList.add('hide');                 // image disappears now
+        showPrizeText(prizeText, textMaxWidth);    // text appears now
+      }, Math.max(0, shakeMs));
+
+      // Full reset after 10s
+      setTimeout(() => {
+        center.style.opacity = 0;
+        hidePrizeText();
+        big.classList.remove('hide');
+        busy = false;
+      }, 10000);
+    }
+
+    // --- WS hookup ---
+    function handle(msg){
+      if (!msg || msg.type !== 'wheel') return;
+      if (msg.action === 'rain-start') startRain(msg);
+      else if (msg.action === 'rain-stop') stopRain();
+      else if (msg.action === 'reveal') reveal(msg);
+    }
 
     function wsConnect(){
       const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
       const ws = new WebSocket(`${proto}://${location.host}/overlay/ws`);
-      ws.onopen = ()=> state.textContent = 'connected';
-      ws.onclose = ()=> { state.textContent = 'disconnected'; setTimeout(wsConnect, 1000); };
-      ws.onmessage = ev => { try { handle(JSON.parse(ev.data)); } catch(_){} };
+      ws.onopen = () => { state.textContent = 'connected'; };
+      ws.onclose = () => {
+        state.textContent = 'disconnected';
+        setTimeout(wsConnect, 1000);
+      };
+      ws.onmessage = ev => {
+        try{ handle(JSON.parse(ev.data)); }catch(_){}
+      };
     }
-
-    function handle(msg){
-      if (!msg || msg.type !== 'wheel') return;
-      if (msg.action === 'rain-start') startRain(msg);
-      if (msg.action === 'rain-stop')  stopRain();
-      if (msg.action === 'reveal')     reveal(msg);
-    }
-
-    function startRain(msg){
-      stopRain();
-      const img = msg.image || '/admin/static/wheel/question.png';
-      for (let i=0;i<38;i++){
-        const d = document.createElement('div');
-        d.className = 'drop';
-        d.style.left = Math.random()*100 + 'vw';
-        d.style.animationDelay = (Math.random()*1.0) + 's';
-        d.style.opacity = (0.5 + Math.random()*0.5);
-        d.style.backgroundImage = `url(${img})`;
-        rain.appendChild(d);
-      }
-    }
-
-    function stopRain(){
-      rain.innerHTML = '';
-    }
-
-    function reveal(msg){
-      // Make sure rain is gone
-      stopRain();
-
-      const img = msg.image || '/admin/static/wheel/question.png';
-      big.style.backgroundImage = `url(${img})`;
-      prizeTxt.textContent = '';
-      center.style.opacity = 1;
-      center.classList.remove('shake'); void center.offsetWidth; center.classList.add('shake');
-
-      // After the shake: explode & hide the image, THEN reveal prize text
-      setTimeout(()=>{
-        burst();
-        big.classList.add('hide');
-        setTimeout(()=>{ prizeTxt.textContent = msg.prize || ''; }, 360);
-      }, 900);
-
-      // Reset after display
-      setTimeout(()=>{ center.style.opacity = 0; prizeTxt.textContent=''; big.classList.remove('hide'); }, 10000);
-    }
-
-    function burst(){
-      conf.innerHTML = '';
-      for (let i=0;i<100;i++){
-        const c = document.createElement('div');
-        c.className = 'c';
-        c.style.left = (20+Math.random()*60)+'vw';
-        c.style.top = (20+Math.random()*30)+'vh';
-        c.style.setProperty('--h', Math.floor(Math.random()*360));
-        c.style.setProperty('--r', Math.floor(Math.random()*180)+'deg');
-        conf.appendChild(c);
-      }
-      setTimeout(()=> conf.innerHTML = '', 1400);
-    }
-
     wsConnect();
   })();
   </script>
