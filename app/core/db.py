@@ -10,6 +10,12 @@ SQLITE_URL = f"sqlite:///{(DB_PATH / 'bot.db').as_posix()}"
 
 engine = create_engine(SQLITE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    """Lightweight SQLite migration helper."""
+    cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()]
+    if column not in cols:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+        conn.commit()
 
 
 def bootstrap() -> None:
@@ -19,13 +25,3 @@ def bootstrap() -> None:
         conn.commit()
     # Create tables
     Base.metadata.create_all(bind=engine)
-
-    # --- Lightweight migrations (SQLite) ---
-    # We intentionally avoid a full migration framework for now.
-    # Add columns if missing.
-    with engine.connect() as conn:
-        # Redeem.cooldown_s (v1.9.0)
-        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(redeems)")).fetchall()]
-        if "cooldown_s" not in cols:
-            conn.execute(text("ALTER TABLE redeems ADD COLUMN cooldown_s INTEGER NOT NULL DEFAULT 0"))
-            conn.commit()

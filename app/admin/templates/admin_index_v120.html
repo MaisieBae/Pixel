@@ -65,7 +65,6 @@
         <input name="key" placeholder="item key (e.g., confetti_token)" required />
         <input name="name" placeholder="display name" required />
         <input name="description" placeholder="description (optional)" />
-        <input type="hidden" name="enabled" value="0" />
         <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
         <button type="submit">Save</button>
       </form>
@@ -109,7 +108,7 @@
       <h3>Recent Users</h3>
       {% if users %}
       <table>
-        <thead><tr><th>User</th><th>Balance</th><th>Grant</th></tr></thead>
+        <thead><tr><th>User</th><th>Balance</th><th>Grant</th><th>Adjust</th></tr></thead>
         <tbody>
           {% for u in users %}
           <tr>
@@ -123,50 +122,23 @@
                 <button>Grant</button>
               </form>
             </td>
+            <td>
+              <form method="post" action="/admin/api/users/adjust" style="display:flex; gap:6px; align-items:center;">
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input name="delta" type="number" step="1" style="width:90px" placeholder="+/-" required />
+                <input name="reason" style="width:140px" placeholder="reason" value="admin_adjust" />
+                <button>Apply</button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
-
-      <h3 style="margin-top:16px">Manual Adjust (add or remove)</h3>
-      <form method="post" action="/admin/api/users/adjust" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <input name="user" placeholder="username" required />
-        <input name="delta" type="number" step="1" placeholder="delta (e.g., -50)" style="width:160px" required />
-        <input name="reason" placeholder="reason" style="width:220px" />
-        <button>Apply</button>
-      </form>
-
-      <div class="muted" style="margin-top:10px;">
-        Audit JSON: <code>/admin/api/users/transactions</code> (optional <code>?user=NAME</code>)
-      </div>
       {% else %}
         <p class="muted">No users yet. Create one above or use the Chat Console.</p>
       {% endif %}
     </div>
   </div>
-</section>
-
-<section class="card">
-  <h2>Audit Log <span class="muted">(last 50 transactions)</span></h2>
-  {% if transactions %}
-  <table>
-    <thead><tr><th>ID</th><th>User ID</th><th>Type</th><th>Delta</th><th>Reason</th><th>Time (UTC)</th></tr></thead>
-    <tbody>
-      {% for t in transactions %}
-      <tr>
-        <td>{{ t.id }}</td>
-        <td>{{ t.user_id }}</td>
-        <td>{{ t.type }}</td>
-        <td>{{ t.delta }}</td>
-        <td>{{ t.reason }}</td>
-        <td>{{ t.created_at }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-    <p class="muted">No transactions yet.</p>
-  {% endif %}
 </section>
 
 <section class="card">
@@ -178,8 +150,7 @@
         <input name="key" placeholder="key (e.g., tts)" required />
         <input name="display_name" placeholder="Display Name" required />
         <input name="cost" type="number" step="1" placeholder="Cost" required />
-        <input name="cooldown_s" type="number" step="1" placeholder="Cooldown (seconds)" />
-        <input type="hidden" name="enabled" value="0" />
+        <input name="cooldown_s" type="number" step="1" placeholder="Cooldown (sec)" value="0" />
         <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
         <button type="submit">Save</button>
       </form>
@@ -195,7 +166,7 @@
             <td><code>{{ r.key }}</code></td>
             <td>{{ r.display_name }}</td>
             <td>{{ r.cost }}</td>
-            <td>{{ r.cooldown_s }}</td>
+            <td>{{ r.cooldown_s if r.cooldown_s is defined else 0 }}s</td>
             <td>{{ 'Yes' if r.enabled else 'No' }}</td>
             <td>
               <form method="post" action="/admin/api/redeems/toggle" style="display:inline-block">
@@ -210,65 +181,6 @@
       </table>
       {% else %}
         <p class="muted">No redeems found.</p>
-      {% endif %}
-    </div>
-  </div>
-</section>
-
-<section class="card">
-  <h2>TTS Lines Editor <span class="muted">(live reload + backups)</span></h2>
-  <p class="muted">Edits apply immediately: the wheel reads these files every spin. Saving creates a timestamped backup in <code>./data/backups/</code>.</p>
-
-  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
-    <div style="flex:1; min-width:360px;">
-      <h3>Spin Lines <span class="muted">(spin_lines.txt)</span></h3>
-      <form method="post" action="/admin/api/tts-lines/save">
-        <input type="hidden" name="kind" value="spin" />
-        <textarea name="content" rows="10" style="width:100%;" spellcheck="false">{{ spin_lines_text }}</textarea>
-        <button type="submit">Save Spin Lines</button>
-      </form>
-      <h4 style="margin-top:14px;">Backups</h4>
-      {% if spin_line_backups %}
-        <ul class="list">
-          {% for b in spin_line_backups %}
-          <li>
-            <code>{{ b.name }}</code>
-            <form method="post" action="/admin/api/tts-lines/restore" style="display:inline-block; margin-left:8px;">
-              <input type="hidden" name="kind" value="spin" />
-              <input type="hidden" name="backup_name" value="{{ b.name }}" />
-              <button type="submit">Restore</button>
-            </form>
-          </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted">No backups yet.</p>
-      {% endif %}
-    </div>
-
-    <div style="flex:1; min-width:360px;">
-      <h3>Prize Lines <span class="muted">(prize_lines.txt)</span></h3>
-      <form method="post" action="/admin/api/tts-lines/save">
-        <input type="hidden" name="kind" value="prize" />
-        <textarea name="content" rows="10" style="width:100%;" spellcheck="false">{{ prize_lines_text }}</textarea>
-        <button type="submit">Save Prize Lines</button>
-      </form>
-      <h4 style="margin-top:14px;">Backups</h4>
-      {% if prize_line_backups %}
-        <ul class="list">
-          {% for b in prize_line_backups %}
-          <li>
-            <code>{{ b.name }}</code>
-            <form method="post" action="/admin/api/tts-lines/restore" style="display:inline-block; margin-left:8px;">
-              <input type="hidden" name="kind" value="prize" />
-              <input type="hidden" name="backup_name" value="{{ b.name }}" />
-              <button type="submit">Restore</button>
-            </form>
-          </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted">No backups yet.</p>
       {% endif %}
     </div>
   </div>
@@ -322,4 +234,85 @@
     <p class="muted">No sound files found in <code>./sounds</code>. Drop .wav/.mp3/.ogg files there.</p>
   {% endif %}
 </section>
+
+<section class="card" style="margin-top:16px">
+  <h2>v1.8.0 — TTS Lines Editor</h2>
+  <p class="muted">Edits <code>data/spin_lines.txt</code> and <code>data/prize_lines.txt</code>. Saving creates versioned backups in <code>data/backups/</code>. Wheel loads these files on-demand, so changes take effect immediately.</p>
+
+  <form id="tts-lines-form" method="post" action="/admin/api/tts-lines/save" style="display:grid; gap:12px">
+    <div style="display:grid; gap:6px">
+      <label><strong>spin_lines.txt</strong></label>
+      <textarea name="spin_lines" id="spin_lines" rows="8" style="width:100%"></textarea>
+      <div class="muted" id="spin_backups"></div>
+    </div>
+
+    <div style="display:grid; gap:6px">
+      <label><strong>prize_lines.txt</strong></label>
+      <textarea name="prize_lines" id="prize_lines" rows="8" style="width:100%"></textarea>
+      <div class="muted" id="prize_backups"></div>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button type="submit">💾 Save + Backup</button>
+      <span class="muted" id="tts-save-result"></span>
+    </div>
+  </form>
+
+  <h3 style="margin-top:14px">Restore Backup</h3>
+  <form id="tts-restore-form" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <select name="which" id="restore-which">
+      <option value="spin">spin_lines</option>
+      <option value="prize">prize_lines</option>
+    </select>
+    <input name="backup_name" id="backup_name" placeholder="backup filename (from list above)" required style="min-width:280px" />
+    <button type="submit">↩️ Restore</button>
+    <span class="muted" id="tts-restore-result"></span>
+  </form>
+
+  <script>
+  (function(){
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const hdrs = token ? {'x-admin-token': token} : {};
+
+    async function load(){
+      const r = await fetch('/admin/api/tts-lines/get' + (token?('?token='+encodeURIComponent(token)):'') , {headers: hdrs});
+      const j = await r.json();
+      if(!j.ok) return;
+      document.getElementById('spin_lines').value = j.spin_lines || '';
+      document.getElementById('prize_lines').value = j.prize_lines || '';
+      document.getElementById('spin_backups').textContent = 'Spin backups: ' + (j.spin_backups||[]).join(', ');
+      document.getElementById('prize_backups').textContent = 'Prize backups: ' + (j.prize_backups||[]).join(', ');
+    }
+
+    document.getElementById('tts-lines-form').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const out = document.getElementById('tts-save-result');
+      out.textContent = 'saving…';
+      const fd = new FormData(e.target);
+      try{
+        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
+        const j = await r.json();
+        out.textContent = j.ok ? 'saved ✅' : ('error: ' + (j.detail||''));
+        await load();
+      }catch(err){ out.textContent = 'error: ' + err; }
+    });
+
+    document.getElementById('tts-restore-form').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const out = document.getElementById('tts-restore-result');
+      out.textContent = 'restoring…';
+      const fd = new FormData(e.target);
+      try{
+        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
+        const j = await r.json();
+        out.textContent = j.ok ? 'restored ✅' : ('error: ' + (j.detail||''));
+        await load();
+      }catch(err){ out.textContent = 'error: ' + err; }
+    });
+
+    load();
+  })();
+  </script>
+</section>
+
 {% endblock %}

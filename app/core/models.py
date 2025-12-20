@@ -49,9 +49,8 @@ class Redeem(Base):
     key: Mapped[str] = mapped_column(String(40), unique=True, index=True)  # e.g., tts, pixel, sound, spin
     display_name: Mapped[str] = mapped_column(String(80))
     cost: Mapped[int] = mapped_column(Integer, default=0)
-    # Per-user cooldown in seconds (0 disables)
-    cooldown_s: Mapped[int] = mapped_column(Integer, default=0)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    cooldown_s: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -63,6 +62,7 @@ class Item(Base):
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(String(255), default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    cooldown_s: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

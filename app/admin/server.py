@@ -46,15 +46,6 @@ def _admin_auth(settings: Settings, request: Request) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token")
 
 
-def _admin_redirect(request: Request) -> RedirectResponse:
-    """Redirect back to /admin, preserving ?token=... if present."""
-    token = request.query_params.get("token", "").strip()
-    url = "/admin"
-    if token:
-        url = f"{url}?token={token}"
-    return RedirectResponse(url=url, status_code=303)
-
-
 def get_db():
     db = SessionLocal()
     try:
@@ -84,7 +75,7 @@ async def _maybe_random_pixel(user: str, text: str) -> None:
     with SessionLocal() as db:
         rs = RedeemsService(db)
         rs.seed_defaults()
-        payload = {"user": user, "message": text}
+        payload = {"user": name, "message": text}
         # Enqueue directly without point deduction or cooldown (random replies)
         rs.queue.enqueue("pixel", payload)
 
@@ -152,7 +143,7 @@ def create_app(settings: Settings) -> FastAPI:
     global _bus, _js, _settings, _bg_tasks, _worker
     _settings = settings
 
-    app = FastAPI(title="Joystick Bot — v1.9.0")
+    app = FastAPI(title="Joystick Bot — v1.5.0")
 
     bootstrap()
     settings.sounds_path.mkdir(parents=True, exist_ok=True)
@@ -186,168 +177,13 @@ def create_app(settings: Settings) -> FastAPI:
         users = list(db.scalars(select(User).order_by(User.last_seen.desc()).limit(10)))
         redeems = RedeemsService(db)
         redeems.seed_defaults()
-        # TTS lines (v1.8.0)
-        from app.core.fileops import read_text, list_backups
-        data_dir = Path("./data").resolve()
-        backups_dir = data_dir / "backups"
-        spin_path = Path(settings.SPIN_LINES_FILE)
-        prize_path = Path(settings.PRIZE_LINES_FILE)
-
-        spin_txt = read_text(spin_path)
-        prize_txt = read_text(prize_path)
-
-        spin_baks = list_backups(backups_dir, "spin_lines", limit=20)
-        prize_baks = list_backups(backups_dir, "prize_lines", limit=20)
-
-        # Audit log (v1.9.0)
-        ps = PointsService(db)
-        txns = ps.list_transactions(limit=50)
-
         return templates.TemplateResponse("admin_index_v120.html", {
             "request": request,
             "sounds": sounds,
             "users": users,
             "redeems": redeems.list(),
-            "spin_lines_text": spin_txt,
-            "prize_lines_text": prize_txt,
-            "spin_line_backups": spin_baks,
-            "prize_line_backups": prize_baks,
-            "transactions": txns,
             "sim_mode": (settings.JOYSTICK_TOKEN.strip() == ""),
         })
-
-    # ---------- Users & Points ----------
-    @admin.post("/api/users/create")
-    async def api_users_create(request: Request, name: str = Form(...), db: Session = Depends(get_db)):
-        _admin_auth(settings, request)
-        ps = PointsService(db)
-        ps.ensure_user(name.strip())
-        return _admin_redirect(request)
-
-    @admin.post("/api/users/grant")
-    async def api_users_grant(
-        request: Request,
-        user_id: int = Form(...),
-        amount: int = Form(...),
-        reason: str = Form("admin"),
-        db: Session = Depends(get_db),
-    ):
-        _admin_auth(settings, request)
-        ps = PointsService(db)
-        ps.grant(int(user_id), int(amount), reason or "admin")
-        return _admin_redirect(request)
-
-    @admin.post("/api/users/adjust")
-    async def api_users_adjust(
-        request: Request,
-        user: str = Form(...),
-        delta: int = Form(...),
-        reason: str = Form("admin_adjust"),
-        db: Session = Depends(get_db),
-    ):
-        _admin_auth(settings, request)
-        ps = PointsService(db)
-        u = ps.ensure_user(user.strip())
-        ps.adjust(u.id, int(delta), reason or "admin_adjust")
-        return _admin_redirect(request)
-
-    @admin.get("/api/users/transactions")
-    async def api_users_transactions(user: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
-        ps = PointsService(db)
-        user_id = None
-        if user:
-            u = ps.ensure_user(user)
-            user_id = u.id
-        txns = ps.list_transactions(user_id=user_id, limit=limit)
-        out = [
-            {
-                "id": t.id,
-                "user_id": t.user_id,
-                "type": t.type,
-                "delta": t.delta,
-                "reason": t.reason,
-                "created_at": t.created_at.isoformat(timespec="seconds"),
-            }
-            for t in txns
-        ]
-        return JSONResponse({"items": out})
-
-    # ---------- Redeems (v1.9.0) ----------
-    @admin.post("/api/redeems/upsert")
-    async def api_redeems_upsert(
-        request: Request,
-        key: str = Form(...),
-        display_name: str = Form(...),
-        cost: int = Form(0),
-        cooldown_s: int = Form(0),
-        enabled: list[str] = Form([]),
-        db: Session = Depends(get_db),
-    ):
-        _admin_auth(settings, request)
-        rs = RedeemsService(db)
-        enabled_bool = any(str(v) == "1" for v in (enabled or []))
-        rs.upsert(key=key.strip(), display_name=display_name.strip(), cost=int(cost), cooldown_s=int(cooldown_s), enabled=enabled_bool)
-        return _admin_redirect(request)
-
-    @admin.post("/api/redeems/toggle")
-    async def api_redeems_toggle(request: Request, key: str = Form(...), enabled: int = Form(...), db: Session = Depends(get_db)):
-        _admin_auth(settings, request)
-        rs = RedeemsService(db)
-        rs.toggle(key=key.strip(), enabled=bool(int(enabled)))
-        return _admin_redirect(request)
-
-    # ---------- TTS lines editor (v1.8.0) ----------
-    @admin.post("/api/tts-lines/save")
-    async def api_tts_lines_save(
-        request: Request,
-        kind: str = Form(...),
-        content: str = Form(""),
-    ):
-        _admin_auth(settings, request)
-        from app.core.fileops import write_text_with_backup
-
-        kind = (kind or "").lower().strip()
-        data_dir = Path("./data").resolve()
-        backups_dir = data_dir / "backups"
-        if kind == "spin":
-            path = Path(settings.SPIN_LINES_FILE)
-            prefix = "spin_lines"
-        elif kind == "prize":
-            path = Path(settings.PRIZE_LINES_FILE)
-            prefix = "prize_lines"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid kind")
-
-        write_text_with_backup(path, content or "", backup_dir=backups_dir, prefix=prefix, keep=25)
-        return _admin_redirect(request)
-
-    @admin.post("/api/tts-lines/restore")
-    async def api_tts_lines_restore(
-        request: Request,
-        kind: str = Form(...),
-        backup_name: str = Form(...),
-    ):
-        _admin_auth(settings, request)
-        from app.core.fileops import restore_backup
-
-        kind = (kind or "").lower().strip()
-        data_dir = Path("./data").resolve()
-        backups_dir = data_dir / "backups"
-
-        if kind == "spin":
-            path = Path(settings.SPIN_LINES_FILE)
-            prefix = "spin_lines"
-        elif kind == "prize":
-            path = Path(settings.PRIZE_LINES_FILE)
-            prefix = "prize_lines"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid kind")
-
-        bfile = backups_dir / backup_name
-        if not bfile.exists() or not bfile.name.startswith(prefix + "_"):
-            raise HTTPException(status_code=404, detail="Backup not found")
-        restore_backup(path, bfile)
-        return _admin_redirect(request)
 
     # SFX test
     @admin.post("/api/play-test")
@@ -372,13 +208,13 @@ def create_app(settings: Settings) -> FastAPI:
         _admin_auth(settings, request)
         if _js:
             await _js.sim_push_chat(user, text)
-        return _admin_redirect(request)
+        return RedirectResponse(url="/admin", status_code=303)
 
     @admin.post("/api/sim/event")
     async def api_sim_event(request: Request, kind: str = Form(...), user: str = Form("Tester"), tokens: int = Form(0), months: int = Form(1)):
         _admin_auth(settings, request)
         if not _js:
-            return _admin_redirect(request)
+            return RedirectResponse(url="/admin", status_code=303)
         if kind == "follow":
             await _js.sim_push_follow(user)
         elif kind == "sub":
@@ -387,7 +223,7 @@ def create_app(settings: Settings) -> FastAPI:
             await _js.sim_push_tip(user, tokens)
         elif kind == "dropin":
             await _js.sim_push_dropin(user)
-        return _admin_redirect(request)
+        return RedirectResponse(url="/admin", status_code=303)
 
     # Queue listing API
     @admin.get("/api/queue")
@@ -411,14 +247,13 @@ def create_app(settings: Settings) -> FastAPI:
         key: str = Form(...),
         name: str = Form(...),
         description: str = Form(""),
-        enabled: list[str] = Form([]),
+        enabled: int = Form(1),
         db: Session = Depends(get_db),
     ):
         _admin_auth(settings, request)
         svc = ItemsService(db)
-        enabled_bool = any(str(v) == "1" for v in (enabled or []))
-        svc.upsert_item(key=key, name=name, description=description, enabled=enabled_bool)
-        return _admin_redirect(request)
+        svc.upsert_item(key=key, name=name, description=description, enabled=bool(int(enabled)))
+        return RedirectResponse(url="/admin", status_code=303)
 
     @admin.post("/api/items/grant")
     async def api_items_grant(
@@ -433,7 +268,7 @@ def create_app(settings: Settings) -> FastAPI:
         isvc = ItemsService(db)
         u = ps.ensure_user(user)
         isvc.grant_item(u.id, item_key, qty=int(qty))
-        return _admin_redirect(request)
+        return RedirectResponse(url="/admin", status_code=303)
 
     @admin.get("/api/items/inventory")
     async def api_items_inventory(user: str, db: Session = Depends(get_db)):
@@ -444,13 +279,163 @@ def create_app(settings: Settings) -> FastAPI:
         out = [{"item_key": x.item_key, "qty": x.qty} for x in inv]
         return JSONResponse({"user": u.name, "items": out})
 
-    # ---------- Quick Spin Tester (no points/cooldown) ----------
+    
+    # ---------- Users / Points ----------
+    @admin.post("/api/users/create")
+    async def api_users_create(
+        request: Request,
+        name: str = Form(...),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        u = ps.ensure_user(name.strip())
+        return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}})
+
+    @admin.post("/api/users/grant")
+    async def api_users_grant(
+        request: Request,
+        user_id: int = Form(...),
+        amount: int = Form(...),
+        reason: str = Form("admin"),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        u = ps.ensure_user(name.strip())
+        new_bal = ps.grant(u.id, amount=int(amount), reason=str(reason or "admin"))
+        return JSONResponse({"ok": True, "user": name, "new_balance": new_bal})
+
+    @admin.post("/api/users/adjust")
+    async def api_users_adjust(
+        request: Request,
+        user_id: int = Form(...),
+        delta: int = Form(...),
+        reason: str = Form("admin_adjust"),
+        db: Session = Depends(get_db),
+    ):
+        """Manual +/- adjustment (delta can be negative)."""
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        u = ps.ensure_user(name.strip())
+        # Use grant for positive, spend for negative so audit is accurate
+        d = int(delta)
+        if d >= 0:
+            new_bal = ps.grant(u.id, amount=d, reason=str(reason or "admin_adjust"))
+            tx_type = "adjust"
+        else:
+            new_bal = ps.spend(u.id, amount=abs(d), reason=str(reason or "admin_adjust"))
+            tx_type = "adjust"
+        return JSONResponse({"ok": True, "user": name, "delta": d, "new_balance": new_bal, "type": tx_type})
+
+    @admin.get("/api/users/transactions")
+    async def api_users_transactions(request: Request, user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        u = ps.ensure_user(name.strip())
+        from app.core.models import Transaction
+        rows = list(db.scalars(select(Transaction).where(Transaction.user_id == u.id).order_by(Transaction.id.desc()).limit(int(limit))))
+        return JSONResponse({
+            "ok": True,
+            "user": {"id": u.id, "name": u.name},
+            "transactions": [{"id": r.id, "type": r.type, "delta": r.delta, "reason": r.reason, "created_at": r.created_at.isoformat() + "Z"} for r in rows],
+        })
+
+    # ---------- Redeems CRUD ----------
+    @admin.post("/api/redeems/upsert")
+    async def api_redeems_upsert(
+        request: Request,
+        key: str = Form(...),
+        display_name: str = Form(...),
+        cost: int = Form(...),
+        enabled: bool = Form(True),
+        cooldown_s: int = Form(0),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.seed_defaults()
+        r = rs.upsert(key.strip(), display_name.strip(), int(cost), bool(enabled), cooldown_s=int(cooldown_s or 0))
+        return JSONResponse({"ok": True, "redeem": {"key": r.key, "display_name": r.display_name, "cost": r.cost, "enabled": r.enabled, "cooldown_s": getattr(r, "cooldown_s", 0)}})
+
+    @admin.post("/api/redeems/toggle")
+    async def api_redeems_toggle(
+        request: Request,
+        key: str = Form(...),
+        enabled: bool = Form(...),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.seed_defaults()
+        rs.toggle(key.strip(), bool(enabled))
+        return JSONResponse({"ok": True, "key": key, "enabled": bool(enabled)})
+
+    @admin.get("/api/redeems/list")
+    async def api_redeems_list(request: Request, db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        rs.seed_defaults()
+        return JSONResponse({"ok": True, "redeems": rs.list()})
+
+    # ---------- TTS Lines Editor (Spin/Prize) ----------
+    def _tts_paths():
+        data_dir = Path("./data")
+        spin_path = data_dir / "spin_lines.txt"
+        prize_path = data_dir / "prize_lines.txt"
+        backups_dir = data_dir / "backups"
+        return spin_path, prize_path, backups_dir
+
+    @admin.get("/api/tts-lines/get")
+    async def api_tts_lines_get(request: Request):
+        _admin_auth(settings, request)
+        from app.core.fileops import read_text_file, list_backups
+        spin_path, prize_path, backups_dir = _tts_paths()
+        return JSONResponse({
+            "ok": True,
+            "spin_lines": read_text_file(spin_path),
+            "prize_lines": read_text_file(prize_path),
+            "spin_backups": [b.name for b in list_backups(backups_dir, "spin_lines")],
+            "prize_backups": [b.name for b in list_backups(backups_dir, "prize_lines")],
+        })
+
+    @admin.post("/api/tts-lines/save")
+    async def api_tts_lines_save(
+        request: Request,
+        spin_lines: str = Form(""),
+        prize_lines: str = Form(""),
+    ):
+        _admin_auth(settings, request)
+        from app.core.fileops import write_text_file, make_backup
+        spin_path, prize_path, backups_dir = _tts_paths()
+        # backup current before overwrite
+        make_backup(spin_path, backups_dir, "spin_lines")
+        make_backup(prize_path, backups_dir, "prize_lines")
+        write_text_file(spin_path, spin_lines)
+        write_text_file(prize_path, prize_lines)
+        return JSONResponse({"ok": True})
+
+    @admin.post("/api/tts-lines/restore")
+    async def api_tts_lines_restore(request: Request, which: str = Form(...), backup_name: str = Form(...)):
+        _admin_auth(settings, request)
+        spin_path, prize_path, backups_dir = _tts_paths()
+        target = spin_path if which == "spin" else prize_path
+        prefix = "spin_lines" if which == "spin" else "prize_lines"
+        bpath = backups_dir / backup_name
+        if not bpath.exists() or not bpath.name.startswith(prefix):
+            raise HTTPException(status_code=400, detail="Invalid backup")
+        from app.core.fileops import write_text_file, read_text_file
+        write_text_file(target, read_text_file(bpath))
+        return JSONResponse({"ok": True})
+
+
+# ---------- Quick Spin Tester (no points/cooldown) ----------
     @admin.post("/api/spin/quick")
     async def api_spin_quick(request: Request, user: str = Form("Tester"), db: Session = Depends(get_db)):
         _admin_auth(settings, request)
         qs = QueueService(db)
-        qid = qs.enqueue("spin", {"user": user, "quick": True})
-        return JSONResponse({"ok": True, "queue_id": qid, "user": user})
+        qid = qs.enqueue("spin", {"user": name, "quick": True})
+        return JSONResponse({"ok": True, "queue_id": qid, "user": name})
 
     app.include_router(admin, prefix="/admin", tags=["admin"])
 

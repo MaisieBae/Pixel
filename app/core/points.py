@@ -48,30 +48,3 @@ class PointsService:
         self.db.add(Transaction(user_id=user_id, type="spend", delta=-amount, reason=reason))
         self.db.commit()
         return pts.balance
-
-    def adjust(self, user_id: int, delta: int, reason: str, *, allow_negative_balance: bool = False) -> int:
-        """Manual adjustment (admin).
-
-        delta can be positive (add points) or negative (remove points).
-        """
-        if delta == 0:
-            return self.get_balance(user_id)
-        pts = self.db.get(Points, user_id)
-        if pts is None:
-            pts = Points(user_id=user_id, balance=0)
-            self.db.add(pts)
-        new_balance = pts.balance + int(delta)
-        if not allow_negative_balance and new_balance < 0:
-            raise ValueError("Adjustment would make balance negative")
-        pts.balance = new_balance
-        self.db.add(Transaction(user_id=user_id, type="adjust", delta=int(delta), reason=reason))
-        self.db.commit()
-        return pts.balance
-
-    def list_transactions(self, user_id: int | None = None, limit: int = 50) -> list[Transaction]:
-        from sqlalchemy import select
-
-        stmt = select(Transaction).order_by(Transaction.id.desc()).limit(max(1, int(limit)))
-        if user_id is not None:
-            stmt = stmt.where(Transaction.user_id == int(user_id))
-        return list(self.db.scalars(stmt))

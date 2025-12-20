@@ -8,11 +8,11 @@ from app.core.cooldowns import CooldownService
 from app.core.queue import QueueService
 
 
-DEFAULT_REDEEMS: list[tuple[str, str, int, int, bool]] = [
-    ("tts", "Text-to-Speech", 25, 10, True),
-    ("pixel", "Pixel Reply", 50, 20, True),
-    ("sound", "Play Sound", 15, 5, True),
-    ("spin", "Prize Wheel Spin", 100, 60, True),
+DEFAULT_REDEEMS: list[tuple[str, str, int, bool]] = [
+    ("tts", "Text-to-Speech", 25, True),
+    ("pixel", "Pixel Reply", 50, True),
+    ("sound", "Play Sound", 15, True),
+    ("spin", "Prize Wheel Spin", 100, True),
 ]
 
 
@@ -26,9 +26,9 @@ class RedeemsService:
     def seed_defaults(self) -> None:
         existing_keys = set(self.db.scalars(select(Redeem.key)))
         changed = False
-        for key, name, cost, cooldown_s, enabled in DEFAULT_REDEEMS:
+        for key, name, cost, enabled in DEFAULT_REDEEMS:
             if key not in existing_keys:
-                self.db.add(Redeem(key=key, display_name=name, cost=cost, cooldown_s=cooldown_s, enabled=enabled))
+                self.db.add(Redeem(key=key, display_name=name, cost=cost, enabled=enabled))
                 changed = True
         if changed:
             self.db.commit()
@@ -39,15 +39,14 @@ class RedeemsService:
     def get(self, key: str) -> Redeem | None:
         return self.db.scalar(select(Redeem).where(Redeem.key == key))
 
-    def upsert(self, key: str, display_name: str, cost: int, cooldown_s: int, enabled: bool) -> Redeem:
+    def upsert(self, key: str, display_name: str, cost: int, enabled: bool, cooldown_s: int = 0) -> Redeem:
         r = self.get(key)
         if r is None:
-            r = Redeem(key=key, display_name=display_name, cost=cost, cooldown_s=int(cooldown_s), enabled=enabled)
+            r = Redeem(key=key, display_name=display_name, cost=cost, enabled=enabled)
             self.db.add(r)
         else:
             r.display_name = display_name
             r.cost = cost
-            r.cooldown_s = int(cooldown_s)
             r.enabled = enabled
             r.updated_at = datetime.utcnow()
         self.db.commit()
@@ -62,7 +61,7 @@ class RedeemsService:
         self.db.commit()
 
     # --- Core redeem flow (no side effects yet, just accounting/queue) ---
-    def redeem(self, user_name: str, key: str, cooldown_s: int | None = None, queue_kind: str | None = None, payload: dict | None = None) -> dict:
+    def redeem(self, user_name: str, key: str, cooldown_s: int = 0, queue_kind: str | None = None, payload: dict | None = None) -> dict:
         user = self.points.ensure_user(user_name)
         r = self.get(key)
         if not r or not r.enabled:
@@ -79,10 +78,9 @@ class RedeemsService:
         except ValueError:
             return {"ok": False, "error": "Insufficient points"}
 
-        # set cooldown (prefer DB value if cooldown_s not supplied)
-        cd = int(r.cooldown_s or 0) if cooldown_s is None else int(cooldown_s)
-        if cd > 0:
-            self.cooldowns.set(user.id, key, cd)
+        # set cooldown
+        if cooldown_s > 0:
+            self.cooldowns.set(user.id, key, cooldown_s)
 
         # enqueue action
         qid = None
