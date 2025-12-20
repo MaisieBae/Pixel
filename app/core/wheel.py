@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json, random
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any
 
 from app.core.config import Settings
 
@@ -14,6 +14,7 @@ DEFAULT_PRIZES: list[dict[str, Any]] = [
     {"name": "Streamer Compliment", "weight": 10},
     {"name": "Mystery Prize", "weight": 10},
 ]
+
 
 def _read_lines(path: Path) -> list[str]:
     try:
@@ -38,11 +39,18 @@ def load_prizes(settings: Settings) -> list[dict[str, Any]]:
         return DEFAULT_PRIZES
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        items = []
+        items: list[dict[str, Any]] = []
         for it in data:
+            if not isinstance(it, dict):
+                continue
+            # Always keep name/weight, but allow extra fields like:
+            #   grant_points, item_key, item_qty, osc
             name = str(it.get("name", "Prize"))
             weight = int(it.get("weight", 1))
-            items.append({"name": name, "weight": max(1, weight)})
+            obj: dict[str, Any] = dict(it)
+            obj["name"] = name
+            obj["weight"] = max(1, weight)
+            items.append(obj)
         return items or DEFAULT_PRIZES
     except Exception:
         return DEFAULT_PRIZES

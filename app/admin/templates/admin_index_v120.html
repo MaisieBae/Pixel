@@ -25,135 +25,73 @@
 </section>
 
 <section class="card">
+  <h2>Prize Wheel — Quick Spin Tester <span class="muted">(admin only)</span></h2>
+  <p class="muted">This bypasses points/cooldowns and enqueues a single <code>spin</code> job. Use for overlay testing.</p>
+  <form id="quickspin" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+    <input name="user" placeholder="username" value="Tester" />
+    <button type="submit">🎡 Run Quick Spin</button>
+    <span id="quickspin-result" class="muted"></span>
+  </form>
+  <script>
+  (function(){
+    const form = document.getElementById('quickspin');
+    const out  = document.getElementById('quickspin-result');
+    if(!form) return;
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      out.textContent = 'queuing…';
+      const fd = new FormData(form);
+      try{
+        const token = new URLSearchParams(location.search).get('token') || '';
+        const url = token ? ('/admin/api/spin/quick?token=' + encodeURIComponent(token)) : '/admin/api/spin/quick';
+        const resp = await fetch(url, { method:'POST', body: fd });
+        const data = await resp.json();
+        if(data && data.ok) out.textContent = 'queued #' + data.queue_id;
+        else out.textContent = 'error';
+      }catch(err){
+        out.textContent = 'error';
+      }
+    });
+  })();
+  </script>
+</section>
+
+<section class="card">
+  <h2>Items <span class="muted">(inventory)</span></h2>
+  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+    <div style="flex:1; min-width:320px;">
+      <h3>Create / Update Item</h3>
+      <form method="post" action="/admin/api/items/upsert">
+        <input name="key" placeholder="item key (e.g., confetti_token)" required />
+        <input name="name" placeholder="display name" required />
+        <input name="description" placeholder="description (optional)" />
+        <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
+        <button type="submit">Save</button>
+      </form>
+      <p class="muted" style="margin-top:8px">Tip: Wheel prizes can grant items via <code>{"item_key":"confetti_token","item_qty":1}</code>.</p>
+    </div>
+
+    <div style="flex:1; min-width:320px;">
+      <h3>Grant Item</h3>
+      <form method="post" action="/admin/api/items/grant" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input name="user" placeholder="username" required />
+        <input name="item_key" placeholder="item key" required />
+        <input name="qty" type="number" step="1" value="1" style="width:90px" />
+        <button type="submit">Grant</button>
+      </form>
+      <div class="muted" style="margin-top:10px;">
+        View inventory: <code>/admin/api/items/inventory?user=YOURNAME</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="card">
   <h2>Overlay SFX — Quick Test</h2>
   <form id="playtest" hx-post="/admin/api/play-test" hx-target="#play-result" hx-swap="innerHTML">
     <button type="submit">▶️ Play First Sound</button>
   </form>
   <div id="play-result" class="muted"></div>
-</section>
-
-<section class="card">
-  <h2>Wheel — Quick Spin Tester <span id="qs-ws" class="muted">(overlay bus: connecting…)</span></h2>
-
-  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
-    <label>Duration (sec)
-      <input id="qs-dur" type="number" min="1" max="15" value="4" style="width:6rem;">
-    </label>
-    <label>Rain density
-      <input id="qs-den" type="number" min="0" max="200" value="38" style="width:7rem;">
-    </label>
-    <label>Shake (ms)
-      <input id="qs-shk" type="number" min="0" max="3000" value="900" style="width:7rem;">
-    </label>
-    <label>Confetti
-      <input id="qs-con" type="number" min="0" max="400" value="120" style="width:7rem;">
-    </label>
-    <label>Text width (ch)
-      <input id="qs-tw" type="number" min="30" max="90" value="70" style="width:7rem;">
-    </label>
-    <label>Prize text
-      <input id="qs-txt" type="text" value="100 Points!" style="width:18rem;">
-    </label>
-    <label>Image URL (optional)
-      <input id="qs-img" type="text" placeholder="/admin/static/wheel/question.png" style="width:22rem;">
-    </label>
-  </div>
-
-  <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end; margin-top:10px">
-    <label><input id="qs-audio" type="checkbox"> Also trigger SFX overlay</label>
-    <label title="Filename in ./sounds (name or URL)"><small>Start SFX</small>
-      <input id="qs-sfx-start" type="text" value="wheel_start.wav" style="width:12rem;">
-    </label>
-    <label title="Filename in ./sounds (name or URL)"><small>Loop SFX</small>
-      <input id="qs-sfx-loop" type="text" value="wheel_loop.wav" style="width:12rem;">
-    </label>
-    <label title="Filename in ./sounds (name or URL)"><small>Win SFX</small>
-      <input id="qs-sfx-win" type="text" value="wheel_win.wav" style="width:12rem;">
-    </label>
-  </div>
-
-  <div style="display:flex; gap:10px; margin-top:14px;">
-    <button id="qs-run" disabled>Run Quick Spin</button>
-    <button id="qs-stop">Stop Rain / Loop</button>
-  </div>
-
-  <script>
-  (function(){
-    const $ = (id) => document.getElementById(id);
-    const dur = $('qs-dur'), den = $('qs-den'), shk = $('qs-shk'),
-          con = $('qs-con'), tw  = $('qs-tw'),  txt = $('qs-txt'), img = $('qs-img');
-    const withAudio = $('qs-audio'), sfxStart = $('qs-sfx-start'), sfxLoop = $('qs-sfx-loop'), sfxWin = $('qs-sfx-win');
-    const runBtn = $('qs-run'), stopBtn = $('qs-stop'), wsHud = $('qs-ws');
-
-    // WebSocket to overlay bus (same origin)
-    const wsURL = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/overlay/ws';
-    let ws;
-
-    function wsSend(obj){
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
-    }
-
-    function connect(){
-      try {
-        ws = new WebSocket(wsURL);
-        ws.onopen = () => { wsHud.textContent = '(overlay bus: connected)'; runBtn.disabled = false; };
-        ws.onclose = () => { wsHud.textContent = '(overlay bus: disconnected)'; runBtn.disabled = true; setTimeout(connect, 1200); };
-        ws.onerror = () => { wsHud.textContent = '(overlay bus: error)'; runBtn.disabled = true; };
-        ws.onmessage = () => { /* no-op, admin sender only */ };
-      } catch(e) {
-        wsHud.textContent = '(overlay bus: failed)';
-      }
-    }
-    connect();
-
-    function playStart(){
-      // optional SFX: one-shot start + loop
-      if (!withAudio.checked) return;
-      if (sfxStart.value)  wsSend({ type:'sfx', action:'play',       name: sfxStart.value });
-      if (sfxLoop.value)   wsSend({ type:'sfx', action:'loop-start',  name: sfxLoop.value  });
-    }
-    function stopLoop(){
-      wsSend({ type:'wheel', action:'rain-stop' });
-      if (withAudio.checked) wsSend({ type:'sfx', action:'loop-stop' });
-    }
-    function playWin(){
-      if (!withAudio.checked) return;
-      if (sfxWin.value) wsSend({ type:'sfx', action:'play', name: sfxWin.value });
-    }
-
-    runBtn.addEventListener('click', () => {
-      if (!ws || ws.readyState !== 1) return;
-
-      const durationSec   = Math.max(1, Math.min(15, Number(dur.value || 4)));
-      const density       = Number(den.value || 38);
-      const shakeMs       = Number(shk.value || 900);
-      const confettiCount = Number(con.value || 120);
-      const textMaxWidth  = Number(tw.value  || 70);
-      const prizeText     = String(txt.value || '');
-      const imageUrl      = String(img.value || '');
-
-      // start
-      wsSend({ type:'wheel', action:'rain-start', density, ...(imageUrl ? {image: imageUrl} : {}) });
-      playStart();
-
-      // stop + reveal
-      setTimeout(() => {
-        stopLoop();
-        playWin();
-        // slight delay to ensure loop-stop propagates before reveal
-        setTimeout(() => {
-          wsSend({ type:'wheel', action:'reveal',
-            ...(imageUrl ? {image: imageUrl} : {}),
-            prize: prizeText,
-            confettiCount, shakeMs, textMaxWidth
-          });
-        }, 120);
-      }, durationSec * 1000);
-    });
-
-    stopBtn.addEventListener('click', stopLoop);
-  })();
-  </script>
 </section>
 
 <section class="card">

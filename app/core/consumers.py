@@ -108,9 +108,9 @@ class QueueWorker:
 
             user = (payload.get('user') or '').strip()
             prizes = load_prizes(self.settings)
-            segments = [p.get('name','Prize') for p in prizes]
             target_idx = weighted_choice_index(prizes)
-            prize_name = segments[target_idx]
+            prize_obj = prizes[target_idx] if prizes and target_idx < len(prizes) else {}
+            prize_name = str(prize_obj.get('name', 'Prize'))
 
             dur = random.randint(
                 max(2, int(self.settings.WHEEL_SPIN_MIN)),
@@ -142,10 +142,8 @@ class QueueWorker:
                 pass
             try:
                 await self.bus.broadcast({
-                    'type': 'wheel',
-                    'action': 'rain-start',
-                    'image': self.settings.WHEEL_IMAGE_URL,
-                    'density': int(getattr(self.settings, "WHEEL_RAIN_DENSITY", 38)),
+                    'type':'wheel','action':'rain-start',
+                    'image': self.settings.WHEEL_IMAGE_URL
                 })
             except Exception:
                 pass
@@ -169,16 +167,68 @@ class QueueWorker:
             # (5) reveal animation
             try:
                 await self.bus.broadcast({
-                    'type': 'wheel',
-                    'action': 'reveal',
+                    'type':'wheel','action':'reveal',
                     'image': self.settings.WHEEL_IMAGE_URL,
-                    'prize': prize_name,
-                    'shakeMs': int(getattr(self.settings, "WHEEL_SHAKE_MS", 900)),
-                    'confettiCount': int(getattr(self.settings, "WHEEL_CONFETTI_COUNT", 120)),
-                    'textMaxWidth': int(getattr(self.settings, "WHEEL_TEXT_MAX_WIDTH", 70)),
+                    'prize': prize_name
                 })
             except Exception:
                 pass
+
+            # (5.5) Award points/items and fire optional OSC events tied to the prize
+            try:
+                from app.core.points import PointsService
+                from app.core.items import ItemsService
+                ps = PointsService(db)
+                isvc = ItemsService(db)
+
+                # points: { "grant_points": 50 }
+                gp = prize_obj.get("grant_points")
+                if gp is not None:
+                    amt = int(gp)
+                    if amt != 0 and user:
+                        urow = ps.ensure_user(user)
+                        ps.grant(urow.id, amount=amt, reason=f"wheel:{prize_name}")
+
+                # item: { "item_key": "confetti_token", "item_qty": 1 }
+                ik = (prize_obj.get("item_key") or "").strip().lower()
+                if ik and user:
+                    qty = int(prize_obj.get("item_qty") or 1)
+                    urow = ps.ensure_user(user)
+                    isvc.grant_item(urow.id, ik, qty=qty)
+
+                # osc: { "osc": { "address": "...", "type": "int|float|string|bool", "value": ... } }
+                # or  { "osc": [ {..}, {..} ] }
+                osc_spec = prize_obj.get("osc")
+                if osc_spec and user:
+                    from app.core.osc import OSCService, OscMessage
+                    osc = OSCService(self.settings)
+                    msgs = []
+                    if isinstance(osc_spec, dict):
+                        msgs.append(OscMessage(
+                            address=str(osc_spec.get("address","")).strip(),
+                            type=str(osc_spec.get("type","")).strip(),
+                            value=osc_spec.get("value")
+                        ))
+                    elif isinstance(osc_spec, list):
+                        for it in osc_spec:
+                            if not isinstance(it, dict):
+                                continue
+                            msgs.append(OscMessage(
+                                address=str(it.get("address","")).strip(),
+                                type=str(it.get("type","")).strip(),
+                                value=it.get("value")
+                            ))
+                    # Allow simple parameter style: { "param": "SpinWin", "value": 1 } => /avatar/parameters/SpinWin
+                    if not msgs and isinstance(osc_spec, dict) and osc_spec.get("param"):
+                        msgs.append(OscMessage(
+                            address=f"/avatar/parameters/{osc_spec.get('param')}",
+                            type=str(osc_spec.get("type","int")).strip(),
+                            value=osc_spec.get("value", 1)
+                        ))
+                    if msgs:
+                        osc.send_many(msgs)
+            except Exception as e:
+                print(f"[wheel] award/osc error: {e}")
 
             # (6) TTS prize line
             win_lines = load_prize_lines(self.settings)

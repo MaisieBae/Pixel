@@ -58,11 +58,10 @@ class Settings(BaseSettings):
     WHEEL_IMAGE_URL: str = "/admin/static/wheel/question.png"
     WHEEL_PRE_TTS_DELAY_MS: int = 900
 
-    # v1.6.4 — visual tunables
-    WHEEL_RAIN_DENSITY: int = 38          # how many falling icons
-    WHEEL_SHAKE_MS: int = 900             # shake duration before reveal
-    WHEEL_CONFETTI_COUNT: int = 120       # number of confetti pieces
-    WHEEL_TEXT_MAX_WIDTH: int = 70        # max width in "ch" (rough characters)
+    # VRChat OSC (optional)
+    VRC_OSC_ENABLED: bool = False
+    VRC_OSC_HOST: str = "127.0.0.1"
+    VRC_OSC_PORT: int = 9000
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

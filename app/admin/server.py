@@ -17,6 +17,7 @@ from app.core.overlay_bus import OverlayBus, overlay_ws_router
 from app.core.sfx import list_sound_files, validate_sound_file, play_sfx
 from app.core.models import User, Points, Transaction, Redeem, QueueItem, Cooldown
 from app.core.points import PointsService
+from app.core.items import ItemsService
 from app.core.redeems import RedeemsService
 from app.core.cooldowns import CooldownService
 from app.core.queue import QueueService
@@ -39,6 +40,8 @@ def _admin_auth(settings: Settings, request: Request) -> None:
     if not token:
         return
     provided = request.headers.get("X-Admin-Token", "").strip()
+    if not provided:
+        provided = request.query_params.get("token", "").strip()
     if provided != token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token")
 
@@ -136,13 +139,6 @@ async def _rotate_notices():
         await _post_chat("Try !help — TTS, Pixel, Sound, Spin, Clip!")
 
 
-def _wants_json(request: Request) -> bool:
-    # HTMX sets HX-Request: true; also allow explicit Accept JSON
-    hx = (request.headers.get("HX-Request") or "").lower() == "true"
-    accept = (request.headers.get("accept") or "").lower()
-    return hx or ("application/json" in accept)
-
-
 def create_app(settings: Settings) -> FastAPI:
     global _bus, _js, _settings, _bg_tasks, _worker
     _settings = settings
@@ -215,13 +211,7 @@ def create_app(settings: Settings) -> FastAPI:
         return RedirectResponse(url="/admin", status_code=303)
 
     @admin.post("/api/sim/event")
-    async def api_sim_event(
-        request: Request,
-        kind: str = Form(...),
-        user: str = Form("Tester"),
-        tokens: int = Form(0),
-        months: int = Form(1),
-    ):
+    async def api_sim_event(request: Request, kind: str = Form(...), user: str = Form("Tester"), tokens: int = Form(0), months: int = Form(1)):
         _admin_auth(settings, request)
         if not _js:
             return RedirectResponse(url="/admin", status_code=303)
@@ -233,18 +223,6 @@ def create_app(settings: Settings) -> FastAPI:
             await _js.sim_push_tip(user, tokens)
         elif kind == "dropin":
             await _js.sim_push_dropin(user)
-        return RedirectResponse(url="/admin", status_code=303)
-
-    # ✅ Admin Quick Spin (no points / no cooldown)
-    @admin.post("/api/spin/quick")
-    async def api_spin_quick(request: Request, user: str = Form("Tester")):
-        _admin_auth(settings, request)
-        who = (user or "Tester").strip() or "Tester"
-        with SessionLocal() as db:
-            qs = QueueService(db)
-            qid = qs.enqueue("spin", {"user": who, "admin_quick": True})
-        if _wants_json(request):
-            return JSONResponse({"ok": True, "queued": qid, "user": who})
         return RedirectResponse(url="/admin", status_code=303)
 
     # Queue listing API
@@ -261,6 +239,53 @@ def create_app(settings: Settings) -> FastAPI:
             } for q in qs.list()
         ]
         return JSONResponse({"items": items})
+
+    # ---------- Items (Admin-only) ----------
+    @admin.post("/api/items/upsert")
+    async def api_items_upsert(
+        request: Request,
+        key: str = Form(...),
+        name: str = Form(...),
+        description: str = Form(""),
+        enabled: int = Form(1),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        svc = ItemsService(db)
+        svc.upsert_item(key=key, name=name, description=description, enabled=bool(int(enabled)))
+        return RedirectResponse(url="/admin", status_code=303)
+
+    @admin.post("/api/items/grant")
+    async def api_items_grant(
+        request: Request,
+        user: str = Form(...),
+        item_key: str = Form(...),
+        qty: int = Form(1),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        ps = PointsService(db)
+        isvc = ItemsService(db)
+        u = ps.ensure_user(user)
+        isvc.grant_item(u.id, item_key, qty=int(qty))
+        return RedirectResponse(url="/admin", status_code=303)
+
+    @admin.get("/api/items/inventory")
+    async def api_items_inventory(user: str, db: Session = Depends(get_db)):
+        svc = ItemsService(db)
+        ps = PointsService(db)
+        u = ps.ensure_user(user)
+        inv = svc.get_inventory(u.id)
+        out = [{"item_key": x.item_key, "qty": x.qty} for x in inv]
+        return JSONResponse({"user": u.name, "items": out})
+
+    # ---------- Quick Spin Tester (no points/cooldown) ----------
+    @admin.post("/api/spin/quick")
+    async def api_spin_quick(request: Request, user: str = Form("Tester"), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        qs = QueueService(db)
+        qid = qs.enqueue("spin", {"user": user, "quick": True})
+        return JSONResponse({"ok": True, "queue_id": qid, "user": user})
 
     app.include_router(admin, prefix="/admin", tags=["admin"])
 
