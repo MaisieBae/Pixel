@@ -19,3 +19,13 @@ def bootstrap() -> None:
         conn.commit()
     # Create tables
     Base.metadata.create_all(bind=engine)
+
+    # --- Lightweight migrations (SQLite) ---
+    # We intentionally avoid a full migration framework for now.
+    # Add columns if missing.
+    with engine.connect() as conn:
+        # Redeem.cooldown_s (v1.9.0)
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(redeems)")).fetchall()]
+        if "cooldown_s" not in cols:
+            conn.execute(text("ALTER TABLE redeems ADD COLUMN cooldown_s INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()

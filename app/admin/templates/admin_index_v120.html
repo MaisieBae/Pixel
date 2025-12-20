@@ -65,6 +65,7 @@
         <input name="key" placeholder="item key (e.g., confetti_token)" required />
         <input name="name" placeholder="display name" required />
         <input name="description" placeholder="description (optional)" />
+        <input type="hidden" name="enabled" value="0" />
         <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
         <button type="submit">Save</button>
       </form>
@@ -126,11 +127,46 @@
           {% endfor %}
         </tbody>
       </table>
+
+      <h3 style="margin-top:16px">Manual Adjust (add or remove)</h3>
+      <form method="post" action="/admin/api/users/adjust" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <input name="user" placeholder="username" required />
+        <input name="delta" type="number" step="1" placeholder="delta (e.g., -50)" style="width:160px" required />
+        <input name="reason" placeholder="reason" style="width:220px" />
+        <button>Apply</button>
+      </form>
+
+      <div class="muted" style="margin-top:10px;">
+        Audit JSON: <code>/admin/api/users/transactions</code> (optional <code>?user=NAME</code>)
+      </div>
       {% else %}
         <p class="muted">No users yet. Create one above or use the Chat Console.</p>
       {% endif %}
     </div>
   </div>
+</section>
+
+<section class="card">
+  <h2>Audit Log <span class="muted">(last 50 transactions)</span></h2>
+  {% if transactions %}
+  <table>
+    <thead><tr><th>ID</th><th>User ID</th><th>Type</th><th>Delta</th><th>Reason</th><th>Time (UTC)</th></tr></thead>
+    <tbody>
+      {% for t in transactions %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td>{{ t.user_id }}</td>
+        <td>{{ t.type }}</td>
+        <td>{{ t.delta }}</td>
+        <td>{{ t.reason }}</td>
+        <td>{{ t.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted">No transactions yet.</p>
+  {% endif %}
 </section>
 
 <section class="card">
@@ -142,6 +178,8 @@
         <input name="key" placeholder="key (e.g., tts)" required />
         <input name="display_name" placeholder="Display Name" required />
         <input name="cost" type="number" step="1" placeholder="Cost" required />
+        <input name="cooldown_s" type="number" step="1" placeholder="Cooldown (seconds)" />
+        <input type="hidden" name="enabled" value="0" />
         <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
         <button type="submit">Save</button>
       </form>
@@ -150,13 +188,14 @@
       <h3>Registered</h3>
       {% if redeems %}
       <table>
-        <thead><tr><th>Key</th><th>Name</th><th>Cost</th><th>Enabled</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Key</th><th>Name</th><th>Cost</th><th>Cooldown</th><th>Enabled</th><th>Actions</th></tr></thead>
         <tbody>
         {% for r in redeems %}
           <tr>
             <td><code>{{ r.key }}</code></td>
             <td>{{ r.display_name }}</td>
             <td>{{ r.cost }}</td>
+            <td>{{ r.cooldown_s }}</td>
             <td>{{ 'Yes' if r.enabled else 'No' }}</td>
             <td>
               <form method="post" action="/admin/api/redeems/toggle" style="display:inline-block">
@@ -171,6 +210,65 @@
       </table>
       {% else %}
         <p class="muted">No redeems found.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>TTS Lines Editor <span class="muted">(live reload + backups)</span></h2>
+  <p class="muted">Edits apply immediately: the wheel reads these files every spin. Saving creates a timestamped backup in <code>./data/backups/</code>.</p>
+
+  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
+    <div style="flex:1; min-width:360px;">
+      <h3>Spin Lines <span class="muted">(spin_lines.txt)</span></h3>
+      <form method="post" action="/admin/api/tts-lines/save">
+        <input type="hidden" name="kind" value="spin" />
+        <textarea name="content" rows="10" style="width:100%;" spellcheck="false">{{ spin_lines_text }}</textarea>
+        <button type="submit">Save Spin Lines</button>
+      </form>
+      <h4 style="margin-top:14px;">Backups</h4>
+      {% if spin_line_backups %}
+        <ul class="list">
+          {% for b in spin_line_backups %}
+          <li>
+            <code>{{ b.name }}</code>
+            <form method="post" action="/admin/api/tts-lines/restore" style="display:inline-block; margin-left:8px;">
+              <input type="hidden" name="kind" value="spin" />
+              <input type="hidden" name="backup_name" value="{{ b.name }}" />
+              <button type="submit">Restore</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No backups yet.</p>
+      {% endif %}
+    </div>
+
+    <div style="flex:1; min-width:360px;">
+      <h3>Prize Lines <span class="muted">(prize_lines.txt)</span></h3>
+      <form method="post" action="/admin/api/tts-lines/save">
+        <input type="hidden" name="kind" value="prize" />
+        <textarea name="content" rows="10" style="width:100%;" spellcheck="false">{{ prize_lines_text }}</textarea>
+        <button type="submit">Save Prize Lines</button>
+      </form>
+      <h4 style="margin-top:14px;">Backups</h4>
+      {% if prize_line_backups %}
+        <ul class="list">
+          {% for b in prize_line_backups %}
+          <li>
+            <code>{{ b.name }}</code>
+            <form method="post" action="/admin/api/tts-lines/restore" style="display:inline-block; margin-left:8px;">
+              <input type="hidden" name="kind" value="prize" />
+              <input type="hidden" name="backup_name" value="{{ b.name }}" />
+              <button type="submit">Restore</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No backups yet.</p>
       {% endif %}
     </div>
   </div>

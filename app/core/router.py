@@ -49,7 +49,9 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
             "message": " ".join(args),
             "prefix": bool(settings.TTS_PREFIX_USERNAME),
         }
-        result = rs.redeem(user, "tts", cooldown_s=max(1, settings.TTS_COOLDOWN_SECONDS), queue_kind="tts", payload=payload)
+        # Use DB-configured cooldown if set; otherwise fallback to env default.
+        cd = max(1, settings.TTS_COOLDOWN_SECONDS)
+        result = rs.redeem(user, "tts", cooldown_s=cd, queue_kind="tts", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "TTS failed")}
         return {"ok": True, "say": "Queued TTS."}
@@ -59,7 +61,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
             return {"ok": False, "say": "Usage: !pixel <message>"}
         payload = {"user": user, "message": " ".join(args)}
         # Cooldown a bit longer than !tts; adjust in admin if needed
-        result = rs.redeem(user, "pixel", cooldown_s=20, queue_kind="pixel", payload=payload)
+        result = rs.redeem(user, "pixel", cooldown_s=None, queue_kind="pixel", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "Pixel failed")}
         return {"ok": True, "say": "Pixel is thinking…"}
@@ -72,7 +74,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         except Exception:
             return {"ok": False, "say": f"Sound not found: {args[0]}"}
         payload = {"user": user, "sound": actual}
-        result = rs.redeem(user, "sound", cooldown_s=5, queue_kind="sound", payload=payload)
+        result = rs.redeem(user, "sound", cooldown_s=None, queue_kind="sound", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "Sound failed")}
         return {"ok": True, "say": f"Playing {actual}"}
@@ -96,7 +98,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
 
     if cmd == "!spin":
         payload = {"user": user}
-        result = rs.redeem(user, "spin", cooldown_s=60, queue_kind="spin", payload=payload)
+        result = rs.redeem(user, "spin", cooldown_s=None, queue_kind="spin", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "Spin failed")}
         return {"ok": True, "say": "Wheel is spinning!"}
