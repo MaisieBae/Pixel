@@ -10,6 +10,8 @@ SQLITE_URL = f"sqlite:///{(DB_PATH / 'bot.db').as_posix()}"
 
 engine = create_engine(SQLITE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+
 def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
     """Lightweight SQLite migration helper."""
     cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()]
@@ -23,5 +25,10 @@ def bootstrap() -> None:
         conn.execute(text("PRAGMA journal_mode=WAL"))
         conn.execute(text("PRAGMA foreign_keys=ON"))
         conn.commit()
+
     # Create tables
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight migrations for additive schema changes
+    with engine.connect() as conn:
+        _ensure_column(conn, "redeems", "cooldown_s", "cooldown_s INTEGER NOT NULL DEFAULT 0")

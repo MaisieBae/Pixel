@@ -2,10 +2,12 @@ from __future__ import annotations
 import uvicorn
 from app.admin.server import create_app
 from app.core.config import Settings
+from app.core.db import bootstrap
 
 
 def main() -> None:
     settings = Settings()  # loads from env/.env
+    bootstrap()
     app = create_app(settings)
     uvicorn.run(
         app,

@@ -1,49 +1,34 @@
 from __future__ import annotations
 
-"""Admin + app factory.
-
-Important project rule: never remove existing wiring "to simplify".
-This module intentionally contains:
-  - Admin UI routes
-  - Overlay websocket router
-  - TTS endpoints
-  - Joystick callbacks + sim console
-  - QueueWorker startup/shutdown
-"""
-
 import asyncio
 import random
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.consumers import QueueWorker
 from app.core.db import SessionLocal
 from app.core.items import ItemsService
-from app.core.joystick import JoystickCallbacks, JoystickClient
-from app.core.models import QueueItem, User
-from app.core.overlay_bus import OverlayBus, overlay_ws_router
+from app.core.models import QueueItem, Redeem, User
+from app.core.overlay_bus import OverlayBus
 from app.core.points import PointsService
 from app.core.queue import QueueService
 from app.core.redeems import RedeemsService
-from app.core.router import handle_chat
 from app.core.tts import TTSService
+from app.joystick.client import JoystickCallbacks, JoystickClient
+from app.core.consumers import QueueWorker
 
 
-# -----------------
-# Globals (kept simple)
-# -----------------
 _bus: OverlayBus | None = None
 _js: JoystickClient | None = None
 _worker: QueueWorker | None = None
-_bg_tasks: list[asyncio.Task[Any]] = []
+_bg_tasks: list[asyncio.Task] = []
 
 
 def get_db():
@@ -55,22 +40,42 @@ def get_db():
 
 
 def _admin_auth(settings: Settings, request: Request) -> None:
-    """Optional admin token gate."""
     token = request.headers.get("x-admin-token") or request.query_params.get("token") or ""
     expected = getattr(settings, "ADMIN_TOKEN", "") or ""
     if expected and token != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-def mount_admin(app: FastAPI, settings: Settings) -> None:
-    admin = APIRouter(prefix="/admin")
+def _wants_json(request: Request) -> bool:
+    accept = (request.headers.get("accept") or "").lower()
+    # Browsers submitting forms typically prefer text/html.
+    if "application/json" in accept:
+        return True
+    # HTMX / AJAX calls may set this header.
+    if (request.headers.get("x-requested-with") or "").lower() == "xmlhttprequest":
+        return True
+    return False
+
+
+def _redirect_back_to_admin(request: Request) -> RedirectResponse:
+    token = request.query_params.get("token") or ""
+    url = "/admin" + (f"?token={token}" if token else "")
+    return RedirectResponse(url=url, status_code=303)
+
+
+def create_app(settings: Settings) -> FastAPI:
+    global _bus
+    app = FastAPI(title="Joystick Bot — v1.9.0")
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-    # ---------- Admin Index ----------
+    _bus = OverlayBus()
+
+    admin = APIRouter(prefix="/admin")
+
     @admin.get("", response_class=HTMLResponse)
     async def admin_index(request: Request, db: Session = Depends(get_db)):
         rs = RedeemsService(db)
-        rs.seed_defaults()
+        rs.seed_defaults(settings)
 
         users = list(db.scalars(select(User).order_by(User.last_seen.desc()).limit(25)))
         redeems = rs.list()
@@ -156,23 +161,14 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
     @admin.post("/api/sim/event")
     async def api_sim_event(
         request: Request,
-        kind: str = Form(...),
+        kind: str = Form("follow"),
         user: str = Form("Tester"),
-        tokens: int = Form(0),
-        months: int = Form(1),
+        tokens: int = Form(100),
     ):
         _admin_auth(settings, request)
         global _js
-        k = (kind or "").strip().lower()
         if _js:
-            if k == "follow":
-                await _js.sim_push_follow(user)
-            elif k == "dropin":
-                await _js.sim_push_dropin(user)
-            elif k == "sub":
-                await _js.sim_push_sub(user, int(months))
-            elif k == "tip":
-                await _js.sim_push_tip(user, int(tokens))
+            await _js.sim_push_event(kind, user, int(tokens))
         return JSONResponse({"ok": True})
 
     # ---------- Quick Spin Tester (no points/cooldown) ----------
@@ -196,7 +192,7 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
         _admin_auth(settings, request)
         svc = ItemsService(db)
         svc.upsert_item(key=key, name=name, description=description, enabled=bool(int(enabled)))
-        return RedirectResponse(url="/admin", status_code=303)
+        return _redirect_back_to_admin(request)
 
     @admin.post("/api/items/grant")
     async def api_items_grant(
@@ -211,7 +207,7 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
         isvc = ItemsService(db)
         u = ps.ensure_user(user)
         isvc.grant_item(u.id, item_key, qty=int(qty))
-        return RedirectResponse(url="/admin", status_code=303)
+        return _redirect_back_to_admin(request)
 
     @admin.get("/api/items/inventory")
     async def api_items_inventory(user: str, db: Session = Depends(get_db)):
@@ -228,7 +224,9 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
         _admin_auth(settings, request)
         ps = PointsService(db)
         u = ps.ensure_user(name.strip())
-        return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}})
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}})
+        return _redirect_back_to_admin(request)
 
     @admin.post("/api/users/grant")
     async def api_users_grant(
@@ -244,7 +242,9 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
             return JSONResponse({"ok": False, "error": "User not found"}, status_code=404)
         ps = PointsService(db)
         new_bal = ps.grant(u.id, amount=int(amount), reason=str(reason or "admin"))
-        return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "new_balance": new_bal})
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "new_balance": new_bal})
+        return _redirect_back_to_admin(request)
 
     @admin.post("/api/users/adjust")
     async def api_users_adjust(
@@ -260,15 +260,12 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
             return JSONResponse({"ok": False, "error": "User not found"}, status_code=404)
         ps = PointsService(db)
         new_bal = ps.adjust(u.id, delta=int(delta), reason=str(reason or "admin_adjust"), allow_negative_balance=False)
-        return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "delta": int(delta), "new_balance": new_bal})
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "delta": int(delta), "new_balance": new_bal})
+        return _redirect_back_to_admin(request)
 
     @admin.get("/api/users/transactions")
-    async def api_users_transactions(
-        request: Request,
-        user_id: int,
-        limit: int = 50,
-        db: Session = Depends(get_db),
-    ):
+    async def api_users_transactions(request: Request, user_id: int, limit: int = 50, db: Session = Depends(get_db)):
         _admin_auth(settings, request)
         u = db.get(User, int(user_id))
         if u is None:
@@ -305,56 +302,52 @@ def mount_admin(app: FastAPI, settings: Settings) -> None:
     ):
         _admin_auth(settings, request)
         rs = RedeemsService(db)
-        rs.seed_defaults()
+        rs.seed_defaults(settings)
         r = rs.upsert(key.strip(), display_name.strip(), int(cost), bool(enabled), cooldown_s=int(cooldown_s or 0))
-        return JSONResponse(
-            {
-                "ok": True,
-                "redeem": {
-                    "key": r.key,
-                    "display_name": r.display_name,
-                    "cost": r.cost,
-                    "enabled": r.enabled,
-                    "cooldown_s": getattr(r, "cooldown_s", 0),
-                },
-            }
-        )
+        if _wants_json(request):
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "redeem": {
+                        "key": r.key,
+                        "display_name": r.display_name,
+                        "cost": r.cost,
+                        "enabled": r.enabled,
+                        "cooldown_s": getattr(r, "cooldown_s", 0),
+                    },
+                }
+            )
+        return _redirect_back_to_admin(request)
 
     @admin.post("/api/redeems/toggle")
-    async def api_redeems_toggle(
-        request: Request,
-        key: str = Form(...),
-        enabled: bool = Form(...),
-        db: Session = Depends(get_db),
-    ):
+    async def api_redeems_toggle(request: Request, key: str = Form(...), enabled: bool = Form(...), db: Session = Depends(get_db)):
         _admin_auth(settings, request)
         rs = RedeemsService(db)
-        rs.seed_defaults()
+        rs.seed_defaults(settings)
         rs.toggle(key.strip(), bool(enabled))
-        return JSONResponse({"ok": True, "key": key, "enabled": bool(enabled)})
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "key": key, "enabled": bool(enabled)})
+        return _redirect_back_to_admin(request)
 
     @admin.get("/api/redeems/list")
     async def api_redeems_list(request: Request, db: Session = Depends(get_db)):
         _admin_auth(settings, request)
         rs = RedeemsService(db)
-        rs.seed_defaults()
+        rs.seed_defaults(settings)
         return JSONResponse({"ok": True, "redeems": rs.list()})
 
     app.include_router(admin)
 
-
-def create_app(settings: Settings) -> FastAPI:
-    """Create the full FastAPI app (wiring preserved)."""
-    global _bus, _js, _worker, _bg_tasks
-
-    app = FastAPI(title="Joystick Bot — v1.9.0")
-
-    # Overlay bus + websocket router
-    _bus = OverlayBus()
-    app.include_router(overlay_ws_router(_bus))
-
-    # Admin routes
-    mount_admin(app, settings)
+    # ---------- Overlay websocket ----------
+    @app.websocket("/ws/overlay")
+    async def ws_overlay(websocket: WebSocket):
+        assert _bus is not None
+        await _bus.connect(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            await _bus.disconnect(websocket)
 
     # ---------- TTS endpoints ----------
     @app.get("/tts/plain-next", response_class=PlainTextResponse)
@@ -377,18 +370,10 @@ def create_app(settings: Settings) -> FastAPI:
     async def root():
         return RedirectResponse(url="/admin")
 
-    # ---------- Joystick callbacks ----------
-    async def _on_chat(user: str, text: str) -> None:
-        """Handle incoming chat.
-
-        - Commands/redeems handled by handle_chat()
-        - Random Pixel replies are handled here (probability in settings)
-        """
+    async def _on_chat(user: str, text: str, say: str | None = None) -> None:
+        assert _bus is not None
         with SessionLocal() as db:
-            result = handle_chat(db, settings, user, text)
-
-            # Speak immediate system responses (help, errors, etc.)
-            say = result.get("say")
+            # enqueue say (system tts) if provided
             if say:
                 db.add(
                     QueueItem(
@@ -404,7 +389,7 @@ def create_app(settings: Settings) -> FastAPI:
                 )
                 db.commit()
 
-            # Random Pixel response (missing in current repo before this fix)
+            # Random Pixel response
             # Only for non-commands to avoid replying to !help, !spin, etc.
             if text.strip().startswith("!"):
                 return
@@ -415,7 +400,6 @@ def create_app(settings: Settings) -> FastAPI:
             if random.random() >= p:
                 return
 
-            # Enqueue Pixel job (free; does not spend points)
             db.add(
                 QueueItem(
                     kind="pixel",

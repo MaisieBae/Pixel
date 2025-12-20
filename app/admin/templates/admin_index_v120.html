@@ -1,119 +1,94 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="card">
-  <h2>Chat Console {% if sim_mode %}<span class="muted">(Sim mode)</span>{% else %}<span class="muted">(Live token set)</span>{% endif %}</h2>
-  <form method="post" action="/admin/api/sim/chat" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <input name="user" placeholder="username" required />
-    <input name="text" placeholder="message (e.g., !sound tada)" required />
-    <button>Send</button>
-  </form>
-  <div class="muted" style="margin-top:6px">Tip: Try <code>!help</code></div>
 
-  <h3 style="margin-top:16px">Inject Event</h3>
-  <form method="post" action="/admin/api/sim/event" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <select name="kind">
-      <option value="follow">follow</option>
-      <option value="sub">sub</option>
-      <option value="tip">tip</option>
-      <option value="dropin">drop-in</option>
-    </select>
-    <input name="user" placeholder="username" />
-    <input name="months" type="number" step="1" value="1" style="width:80px" />
-    <input name="tokens" type="number" step="1" value="10" style="width:100px" />
-    <button>Inject</button>
-  </form>
-</section>
+<style>
+  .card { background: #111827; border: 1px solid #1f2937; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
+  .muted { color: #9ca3af; }
+  .table { width: 100%; border-collapse: collapse; }
+  .table th, .table td { border-bottom: 1px solid #1f2937; padding: 8px; text-align: left; vertical-align: top; }
+  input, select, textarea { background: #0b1220; border: 1px solid #243047; color: #e5e7eb; padding: 6px 8px; border-radius: 8px; }
+  button { background: #2563eb; border: none; color: white; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  button:hover { filter: brightness(1.05); }
+</style>
 
 <section class="card">
-  <h2>Prize Wheel — Quick Spin Tester <span class="muted">(admin only)</span></h2>
-  <p class="muted">This bypasses points/cooldowns and enqueues a single <code>spin</code> job. Use for overlay testing.</p>
-  <form id="quickspin" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <input name="user" placeholder="username" value="Tester" />
-    <button type="submit">🎡 Run Quick Spin</button>
+  <h2>Quick Spin Tester</h2>
+  <form id="quickspin" method="post" action="/admin/api/spin/quick" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <input name="user" placeholder="user" value="Tester" />
+    <button type="submit">Queue spin</button>
     <span id="quickspin-result" class="muted"></span>
   </form>
-  <script>
-  (function(){
-    const form = document.getElementById('quickspin');
-    const out  = document.getElementById('quickspin-result');
-    if(!form) return;
-    form.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      out.textContent = 'queuing…';
-      const fd = new FormData(form);
-      try{
-        const token = new URLSearchParams(location.search).get('token') || '';
-        const url = token ? ('/admin/api/spin/quick?token=' + encodeURIComponent(token)) : '/admin/api/spin/quick';
-        const resp = await fetch(url, { method:'POST', body: fd });
-        const data = await resp.json();
-        if(data && data.ok) out.textContent = 'queued #' + data.queue_id;
-        else out.textContent = 'error';
-      }catch(err){
-        out.textContent = 'error';
-      }
-    });
-  })();
-  </script>
 </section>
 
 <section class="card">
-  <h2>Items <span class="muted">(inventory)</span></h2>
-  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
-    <div style="flex:1; min-width:320px;">
-      <h3>Create / Update Item</h3>
-      <form method="post" action="/admin/api/items/upsert">
-        <input name="key" placeholder="item key (e.g., confetti_token)" required />
-        <input name="name" placeholder="display name" required />
-        <input name="description" placeholder="description (optional)" />
-        <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
-        <button type="submit">Save</button>
-      </form>
-      <p class="muted" style="margin-top:8px">Tip: Wheel prizes can grant items via <code>{"item_key":"confetti_token","item_qty":1}</code>.</p>
+  <h2>TTS Lines Editor</h2>
+  <p class="muted">Edits apply immediately for future spins/prizes. Backups are stored in <code>./data/backups</code>.</p>
+
+  <form id="tts-lines-form" method="post" action="/admin/api/tts-lines/save" style="display:flex; gap:16px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:340px;">
+      <h3>Spin Lines</h3>
+      <textarea id="spin_lines" name="spin_lines" rows="12" style="width:100%;"></textarea>
+      <div id="spin_backups" class="muted" style="margin-top:6px;"></div>
     </div>
 
-    <div style="flex:1; min-width:320px;">
-      <h3>Grant Item</h3>
-      <form method="post" action="/admin/api/items/grant" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <input name="user" placeholder="username" required />
-        <input name="item_key" placeholder="item key" required />
-        <input name="qty" type="number" step="1" value="1" style="width:90px" />
-        <button type="submit">Grant</button>
-      </form>
-      <div class="muted" style="margin-top:10px;">
-        View inventory: <code>/admin/api/items/inventory?user=YOURNAME</code>
-      </div>
+    <div style="flex:1; min-width:340px;">
+      <h3>Prize Lines</h3>
+      <textarea id="prize_lines" name="prize_lines" rows="12" style="width:100%;"></textarea>
+      <div id="prize_backups" class="muted" style="margin-top:6px;"></div>
     </div>
+
+    <div style="flex-basis:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button type="submit">Save</button>
+      <span id="tts-save-result" class="muted"></span>
+    </div>
+  </form>
+
+  <div style="margin-top:10px; display:flex; gap:20px; flex-wrap:wrap;">
+    <form id="restore_spin" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:10px; align-items:center;">
+      <input type="hidden" name="which" value="spin"/>
+      <input name="backup_name" placeholder="spin_lines_YYYYMMDD_HHMMSS.txt" style="min-width:280px;" />
+      <button type="submit">Restore Spin</button>
+      <span class="muted" id="restore_spin_result"></span>
+    </form>
+
+    <form id="restore_prize" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:10px; align-items:center;">
+      <input type="hidden" name="which" value="prize"/>
+      <input name="backup_name" placeholder="prize_lines_YYYYMMDD_HHMMSS.txt" style="min-width:280px;" />
+      <button type="submit">Restore Prize</button>
+      <span class="muted" id="restore_prize_result"></span>
+    </form>
   </div>
 </section>
 
 <section class="card">
-  <h2>Overlay SFX — Quick Test</h2>
-  <form id="playtest" hx-post="/admin/api/play-test" hx-target="#play-result" hx-swap="innerHTML">
-    <button type="submit">▶️ Play First Sound</button>
-  </form>
-  <div id="play-result" class="muted"></div>
-</section>
-
-<section class="card">
   <h2>Users & Points</h2>
-  <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;">
-    <div style="flex:1; min-width:260px;">
+
+  <div style="display:flex; gap:20px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:320px;">
       <h3>Create User</h3>
-      <form method="post" action="/admin/api/users/create">
+      <form method="post" action="/admin/api/users/create" style="display:flex; gap:8px; align-items:center;">
         <input name="name" placeholder="username" required />
         <button type="submit">Create</button>
       </form>
     </div>
-    <div style="flex:2; min-width:320px;">
-      <h3>Recent Users</h3>
-      {% if users %}
-      <table>
-        <thead><tr><th>User</th><th>Balance</th><th>Grant</th><th>Adjust</th></tr></thead>
+  </div>
+
+  <div style="margin-top:12px;">
+    {% if users %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Last Seen</th>
+            <th>Grant</th>
+            <th>Adjust</th>
+          </tr>
+        </thead>
         <tbody>
           {% for u in users %}
           <tr>
-            <td>{{ u.name }}</td>
-            <td>{{ u.points.balance if u.points else 0 }}</td>
+            <td><b>{{ u.name }}</b> (#{{ u.id }})</td>
+            <td><code>{{ u.last_seen }}</code></td>
             <td>
               <form method="post" action="/admin/api/users/grant" style="display:flex; gap:6px; align-items:center;">
                 <input type="hidden" name="user_id" value="{{ u.id }}" />
@@ -134,10 +109,50 @@
           {% endfor %}
         </tbody>
       </table>
-      {% else %}
-        <p class="muted">No users yet. Create one above or use the Chat Console.</p>
-      {% endif %}
-    </div>
+    {% else %}
+      <p class="muted">No users yet. Create one above or use the Chat Console.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Audit Log</h2>
+  <p class="muted">View recent point transactions (grant/spend/adjust) per user.</p>
+
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <label>
+      User:
+      <select id="audit_user">
+        {% for u in users %}
+          <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      Limit:
+      <input id="audit_limit" type="number" step="1" value="50" style="width:90px" />
+    </label>
+
+    <button type="button" id="audit_load">Load</button>
+    <span id="audit_status" class="muted"></span>
+  </div>
+
+  <div style="overflow:auto; margin-top:10px;">
+    <table class="table" id="audit_table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Type</th>
+          <th>Delta</th>
+          <th>Reason</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="5" class="muted">Click “Load”.</td></tr>
+      </tbody>
+    </table>
   </div>
 </section>
 
@@ -158,10 +173,14 @@
     <div style="flex:2; min-width:360px;">
       <h3>Registered</h3>
       {% if redeems %}
-      <table>
-        <thead><tr><th>Key</th><th>Name</th><th>Cost</th><th>Cooldown</th><th>Enabled</th><th>Actions</th></tr></thead>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Key</th><th>Name</th><th>Cost</th><th>Cooldown</th><th>Enabled</th><th>Toggle</th>
+          </tr>
+        </thead>
         <tbody>
-        {% for r in redeems %}
+          {% for r in redeems %}
           <tr>
             <td><code>{{ r.key }}</code></td>
             <td>{{ r.display_name }}</td>
@@ -180,96 +199,36 @@
         </tbody>
       </table>
       {% else %}
-        <p class="muted">No redeems found.</p>
+        <p class="muted">No redeems registered yet.</p>
       {% endif %}
     </div>
   </div>
 </section>
 
-<section class="card">
-  <h2>Queue</h2>
-  <div id="queue-list" hx-get="/admin/api/queue" hx-trigger="load, every 2s" hx-swap="innerHTML">
-    Loading…
-  </div>
-  <template id="qtpl">
-    <table>
-      <thead><tr><th>ID</th><th>Kind</th><th>Status</th><th>Created</th><th>Payload</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </template>
-  <script>
+<script>
   (function(){
-    const container = document.getElementById('queue-list');
-    const render = (data) => {
-      const tpl = document.getElementById('qtpl');
-      const root = tpl.content.cloneNode(true);
-      const tbody = root.querySelector('tbody');
-      for (const it of (data.items||[])){
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${it.id}</td><td>${it.kind}</td><td>${it.status}</td><td>${it.created_at}</td><td><code>${JSON.stringify(it.payload)}</code></td>`;
-        tbody.appendChild(tr);
+    const form = document.getElementById('quickspin');
+    const out  = document.getElementById('quickspin-result');
+    if(!form) return;
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      out.textContent = 'queuing…';
+      const fd = new FormData(form);
+      try{
+        const token = new URLSearchParams(location.search).get('token') || '';
+        const url = token ? ('/admin/api/spin/quick?token=' + encodeURIComponent(token)) : '/admin/api/spin/quick';
+        const resp = await fetch(url, { method:'POST', body: fd });
+        const data = await resp.json();
+        if(data && data.ok) out.textContent = 'queued #' + data.queue_id;
+        else out.textContent = 'error';
+      }catch(err){
+        out.textContent = 'error';
       }
-      container.innerHTML = '';
-      container.appendChild(root);
-    };
-    document.addEventListener('htmx:afterOnLoad', (ev)=>{
-      try{ render(JSON.parse(ev.detail.xhr.responseText)); }catch(e){ /* ignore */ }
     });
   })();
-  </script>
-</section>
+</script>
 
-<section class="card">
-  <h2>Available Sounds</h2>
-  {% if sounds %}
-    <ul class="list">
-      {% for s in sounds %}
-      <li>
-        <code>{{ s }}</code>
-        <button hx-post="/admin/api/play?name={{ s }}" hx-target="#play-result" hx-swap="innerHTML">Play</button>
-      </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted">No sound files found in <code>./sounds</code>. Drop .wav/.mp3/.ogg files there.</p>
-  {% endif %}
-</section>
-
-<section class="card" style="margin-top:16px">
-  <h2>v1.8.0 — TTS Lines Editor</h2>
-  <p class="muted">Edits <code>data/spin_lines.txt</code> and <code>data/prize_lines.txt</code>. Saving creates versioned backups in <code>data/backups/</code>. Wheel loads these files on-demand, so changes take effect immediately.</p>
-
-  <form id="tts-lines-form" method="post" action="/admin/api/tts-lines/save" style="display:grid; gap:12px">
-    <div style="display:grid; gap:6px">
-      <label><strong>spin_lines.txt</strong></label>
-      <textarea name="spin_lines" id="spin_lines" rows="8" style="width:100%"></textarea>
-      <div class="muted" id="spin_backups"></div>
-    </div>
-
-    <div style="display:grid; gap:6px">
-      <label><strong>prize_lines.txt</strong></label>
-      <textarea name="prize_lines" id="prize_lines" rows="8" style="width:100%"></textarea>
-      <div class="muted" id="prize_backups"></div>
-    </div>
-
-    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <button type="submit">💾 Save + Backup</button>
-      <span class="muted" id="tts-save-result"></span>
-    </div>
-  </form>
-
-  <h3 style="margin-top:14px">Restore Backup</h3>
-  <form id="tts-restore-form" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-    <select name="which" id="restore-which">
-      <option value="spin">spin_lines</option>
-      <option value="prize">prize_lines</option>
-    </select>
-    <input name="backup_name" id="backup_name" placeholder="backup filename (from list above)" required style="min-width:280px" />
-    <button type="submit">↩️ Restore</button>
-    <span class="muted" id="tts-restore-result"></span>
-  </form>
-
-  <script>
+<script>
   (function(){
     const token = new URLSearchParams(location.search).get('token') || '';
     const hdrs = token ? {'x-admin-token': token} : {};
@@ -297,9 +256,22 @@
       }catch(err){ out.textContent = 'error: ' + err; }
     });
 
-    document.getElementById('tts-restore-form').addEventListener('submit', async (e)=>{
+    document.getElementById('restore_spin').addEventListener('submit', async (e)=>{
       e.preventDefault();
-      const out = document.getElementById('tts-restore-result');
+      const out = document.getElementById('restore_spin_result');
+      out.textContent = 'restoring…';
+      const fd = new FormData(e.target);
+      try{
+        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
+        const j = await r.json();
+        out.textContent = j.ok ? 'restored ✅' : ('error: ' + (j.detail||''));
+        await load();
+      }catch(err){ out.textContent = 'error: ' + err; }
+    });
+
+    document.getElementById('restore_prize').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const out = document.getElementById('restore_prize_result');
       out.textContent = 'restoring…';
       const fd = new FormData(e.target);
       try{
@@ -312,7 +284,68 @@
 
     load();
   })();
-  </script>
-</section>
+</script>
+
+<script>
+  (function(){
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const hdrs = token ? {'x-admin-token': token} : {};
+
+    const btn = document.getElementById('audit_load');
+    const sel = document.getElementById('audit_user');
+    const limitEl = document.getElementById('audit_limit');
+    const status = document.getElementById('audit_status');
+    const tbody = document.querySelector('#audit_table tbody');
+
+    async function loadAudit(){
+      if(!sel) return;
+      const user_id = sel.value;
+      const limit = limitEl && limitEl.value ? parseInt(limitEl.value, 10) : 50;
+      status.textContent = 'loading…';
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+
+      try{
+        const qs = new URLSearchParams();
+        qs.set('user_id', user_id);
+        qs.set('limit', String(isNaN(limit) ? 50 : limit));
+        if(token) qs.set('token', token);
+
+        const r = await fetch('/admin/api/users/transactions?' + qs.toString(), {headers: hdrs});
+        const j = await r.json();
+        if(!j.ok){
+          status.textContent = 'error';
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">Error.</td></tr>';
+          return;
+        }
+
+        const rows = j.transactions || [];
+        if(rows.length === 0){
+          status.textContent = '0 rows';
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No transactions.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for(const t of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${t.id}</td>
+            <td>${t.type}</td>
+            <td>${t.delta}</td>
+            <td>${(t.reason||'')}</td>
+            <td><code>${t.created_at}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+        status.textContent = rows.length + ' row(s)';
+      }catch(err){
+        status.textContent = 'error';
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error: ' + err + '</td></tr>';
+      }
+    }
+
+    if(btn) btn.addEventListener('click', loadAudit);
+  })();
+</script>
 
 {% endblock %}
