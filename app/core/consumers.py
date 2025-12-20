@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import asyncio
 from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
 from app.core.db import SessionLocal
 from app.core.models import QueueItem
-from app.core.sfx import play_sfx
-from app.core.config import Settings
 from app.core.overlay_bus import OverlayBus
 from app.core.pixel import call_perplexity
+from app.core.sfx import play_sfx
 
 
 class QueueWorker:
@@ -18,6 +20,7 @@ class QueueWorker:
     Supported kinds:
       - 'sound': payload { 'sound': <filename> }
       - 'pixel': payload { 'user': <name>, 'message': <text> } → calls Perplexity, then enqueues TTS
+      - 'spin': payload { 'user': <name> } → spins wheel, broadcasts overlay, enqueues TTS
     """
 
     def __init__(self, bus: OverlayBus, settings: Settings, poll_interval: float = 0.25) -> None:
@@ -85,11 +88,13 @@ class QueueWorker:
 
         if kind == 'pixel':
             user = payload.get('user') or ''
-            msg  = payload.get('message') or ''
+            msg = payload.get('message') or ''
             prompt = f"@{user}: {msg}" if user else msg
             reply = await call_perplexity(self.settings, prompt)
+
             # Final clamp using configured caps
             from app.core.text import clamp_reply
+
             reply = clamp_reply(reply, int(self.settings.PIXEL_MAX_CHARS), int(self.settings.PIXEL_MAX_SENTENCES))
             tts_payload = {"user": user, "message": reply, "prefix": False, "source": "pixel"}
             q = QueueItem(kind='tts', status='pending', payload_json=tts_payload)
@@ -98,13 +103,11 @@ class QueueWorker:
             return
 
         if kind == 'spin':
-            import asyncio, random
-            from app.core.wheel import (
-                load_prizes, weighted_choice_index,
-                load_spin_lines, load_prize_lines
-            )
+            import random
+
+            from app.core.sfx import loop_start, loop_stop  # <-- use helpers
             from app.core.text import clamp_reply, sanitize_tts_text
-            from app.core.sfx import play_sfx, loop_start, loop_stop  # <-- use helpers
+            from app.core.wheel import load_prize_lines, load_prizes, load_spin_lines, weighted_choice_index
 
             user = (payload.get('user') or '').strip()
             prizes = load_prizes(self.settings)
@@ -114,7 +117,7 @@ class QueueWorker:
 
             dur = random.randint(
                 max(2, int(self.settings.WHEEL_SPIN_MIN)),
-                max(int(self.settings.WHEEL_SPIN_MIN), int(self.settings.WHEEL_SPIN_MAX))
+                max(int(self.settings.WHEEL_SPIN_MIN), int(self.settings.WHEEL_SPIN_MAX)),
             )
 
             # (1) TTS pre-spin
@@ -123,13 +126,17 @@ class QueueWorker:
                 pre = random.choice(spin_lines)
                 pre = pre.replace('{user}', user)
                 pre = clamp_reply(sanitize_tts_text(pre), 220, 2)
-                db.add(QueueItem(kind='tts', status='pending', payload_json={
-                    "user": user, "message": pre, "prefix": False, "source": "wheel"
-                }))
+                db.add(
+                    QueueItem(
+                        kind='tts',
+                        status='pending',
+                        payload_json={"user": user, "message": pre, "prefix": False, "source": "wheel"},
+                    )
+                )
                 db.commit()
 
             # (2) small delay to let pre-roll land
-            await asyncio.sleep(max(0, int(self.settings.WHEEL_PRE_TTS_DELAY_MS))/1000.0)
+            await asyncio.sleep(max(0, int(self.settings.WHEEL_PRE_TTS_DELAY_MS)) / 1000.0)
 
             # (3) start one-shot + loop (on SFX overlay), then rain visuals
             try:
@@ -141,10 +148,7 @@ class QueueWorker:
             except Exception:
                 pass
             try:
-                await self.bus.broadcast({
-                    'type':'wheel','action':'rain-start',
-                    'image': self.settings.WHEEL_IMAGE_URL
-                })
+                await self.bus.broadcast({'type': 'wheel', 'action': 'rain-start', 'image': self.settings.WHEEL_IMAGE_URL})
             except Exception:
                 pass
 
@@ -152,7 +156,7 @@ class QueueWorker:
 
             # (4) stop rain + loop + win stinger
             try:
-                await self.bus.broadcast({'type':'wheel','action':'rain-stop'})
+                await self.bus.broadcast({'type': 'wheel', 'action': 'rain-stop'})
             except Exception:
                 pass
             try:
@@ -166,69 +170,30 @@ class QueueWorker:
 
             # (5) reveal animation
             try:
-                await self.bus.broadcast({
-                    'type':'wheel','action':'reveal',
-                    'image': self.settings.WHEEL_IMAGE_URL,
-                    'prize': prize_name
-                })
+                await self.bus.broadcast(
+                    {'type': 'wheel', 'action': 'reveal', 'image': self.settings.WHEEL_IMAGE_URL, 'prize': prize_name}
+                )
             except Exception:
                 pass
 
-            # (5.5) Award points/items and fire optional OSC events tied to the prize
+            # (5.5) Apply effects (cleanly) via EffectEngine
             try:
-                from app.core.points import PointsService
-                from app.core.items import ItemsService
-                ps = PointsService(db)
-                isvc = ItemsService(db)
+                from app.core.effects import EffectContext, EffectEngine, effects_from_prize
 
-                # points: { "grant_points": 50 }
-                gp = prize_obj.get("grant_points")
-                if gp is not None:
-                    amt = int(gp)
-                    if amt != 0 and user:
-                        urow = ps.ensure_user(user)
-                        ps.grant(urow.id, amount=amt, reason=f"wheel:{prize_name}")
+                effects = effects_from_prize(prize_obj)
+                engine = EffectEngine(db=db, settings=self.settings, bus=self.bus)
+                ctx = EffectContext(
+                    user=user, source="wheel", prize_name=prize_name, db=db, settings=self.settings, bus=self.bus
+                )
+                results = engine.apply_all(effects, ctx)
 
-                # item: { "item_key": "confetti_token", "item_qty": 1 }
-                ik = (prize_obj.get("item_key") or "").strip().lower()
-                if ik and user:
-                    qty = int(prize_obj.get("item_qty") or 1)
-                    urow = ps.ensure_user(user)
-                    isvc.grant_item(urow.id, ik, qty=qty)
-
-                # osc: { "osc": { "address": "...", "type": "int|float|string|bool", "value": ... } }
-                # or  { "osc": [ {..}, {..} ] }
-                osc_spec = prize_obj.get("osc")
-                if osc_spec and user:
-                    from app.core.osc import OSCService, OscMessage
-                    osc = OSCService(self.settings)
-                    msgs = []
-                    if isinstance(osc_spec, dict):
-                        msgs.append(OscMessage(
-                            address=str(osc_spec.get("address","")).strip(),
-                            type=str(osc_spec.get("type","")).strip(),
-                            value=osc_spec.get("value")
-                        ))
-                    elif isinstance(osc_spec, list):
-                        for it in osc_spec:
-                            if not isinstance(it, dict):
-                                continue
-                            msgs.append(OscMessage(
-                                address=str(it.get("address","")).strip(),
-                                type=str(it.get("type","")).strip(),
-                                value=it.get("value")
-                            ))
-                    # Allow simple parameter style: { "param": "SpinWin", "value": 1 } => /avatar/parameters/SpinWin
-                    if not msgs and isinstance(osc_spec, dict) and osc_spec.get("param"):
-                        msgs.append(OscMessage(
-                            address=f"/avatar/parameters/{osc_spec.get('param')}",
-                            type=str(osc_spec.get("type","int")).strip(),
-                            value=osc_spec.get("value", 1)
-                        ))
-                    if msgs:
-                        osc.send_many(msgs)
+                # Store results on the queue item for audit/debug
+                new_payload = dict(payload)
+                new_payload['prize'] = prize_name
+                new_payload['effect_results'] = [r.to_dict() for r in results]
+                item.payload_json = new_payload
             except Exception as e:
-                print(f"[wheel] award/osc error: {e}")
+                print(f"[wheel] effects error: {e}")
 
             # (6) TTS prize line
             win_lines = load_prize_lines(self.settings)
@@ -236,9 +201,13 @@ class QueueWorker:
                 win = random.choice(win_lines)
                 win = win.replace('{user}', user).replace('{prize}', prize_name)
                 win = clamp_reply(sanitize_tts_text(win), 220, 2)
-                db.add(QueueItem(kind='tts', status='pending', payload_json={
-                    "user": user, "message": win, "prefix": False, "source": "wheel"
-                }))
+                db.add(
+                    QueueItem(
+                        kind='tts',
+                        status='pending',
+                        payload_json={"user": user, "message": win, "prefix": False, "source": "wheel"},
+                    )
+                )
 
             db.commit()
             return

@@ -1,8 +1,42 @@
 [
-  {"name": "50 Points", "weight": 30},
-  {"name": "100 Points", "weight": 20},
-  {"name": "Confetti Blast", "weight": 15},
-  {"name": "Silly Honk", "weight": 15},
-  {"name": "Streamer Compliment", "weight": 10},
-  {"name": "Mystery Prize", "weight": 10}
+  {
+    "name": "50 Points",
+    "weight": 30,
+    "effects": [
+      { "type": "points.grant", "amount": 50, "reason": "wheel" }
+    ]
+  },
+  {
+    "name": "100 Points",
+    "weight": 20,
+    "effects": [
+      { "type": "points.grant", "amount": 100, "reason": "wheel" }
+    ]
+  },
+  {
+    "name": "Confetti Blast",
+    "weight": 15,
+    "effects": [
+      { "type": "osc.send", "address": "/avatar/parameters/Confetti", "value_type": "bool", "value": true }
+    ]
+  },
+  {
+    "name": "Silly Honk",
+    "weight": 15,
+    "effects": [
+      { "type": "osc.send", "address": "/avatar/parameters/Honk", "value_type": "int", "value": 1 }
+    ]
+  },
+  {
+    "name": "Streamer Compliment",
+    "weight": 10,
+    "effects": []
+  },
+  {
+    "name": "Mystery Prize",
+    "weight": 10,
+    "effects": [
+      { "type": "inventory.grant", "key": "mystery_token", "qty": 1 }
+    ]
+  }
 ]
