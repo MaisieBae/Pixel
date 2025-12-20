@@ -43,11 +43,13 @@ class RedeemsService:
         r = self.get(key)
         if r is None:
             r = Redeem(key=key, display_name=display_name, cost=cost, enabled=enabled)
+            r.cooldown_s = int(cooldown_s or 0)
             self.db.add(r)
         else:
             r.display_name = display_name
             r.cost = cost
             r.enabled = enabled
+            r.cooldown_s = int(cooldown_s or 0)
             r.updated_at = datetime.utcnow()
         self.db.commit()
         return r
