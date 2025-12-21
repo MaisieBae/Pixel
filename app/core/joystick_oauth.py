@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.core.config import Settings
 
@@ -13,87 +13,116 @@ TOKEN_URL = "https://joystick.tv/api/oauth/token"
 
 
 @dataclass(frozen=True)
-class TokenResponse:
+class OAuthToken:
     access_token: str
     token_type: str
+    expires_in: int
     refresh_token: str
-    expires_in: int  # seconds (per docs)
-    expires_at: datetime
 
 
-def _basic_headers(settings: Settings) -> Dict[str, str]:
-    if not settings.JOYSTICK_BASIC_KEY:
-        raise RuntimeError("Missing JOYSTICK_BASIC_KEY (Authorization: Basic ...)")
+def _maybe_base64_basic_key(raw: str) -> str:
+    """Accept either:
+    - base64("client_id:client_secret")  (recommended, per Joystick docs)
+    - "client_id:client_secret"          (common dev mistake)
+    - already prefixed "Basic XXX"       (we'll strip it)
+
+    Return just the base64 part (no 'Basic ' prefix).
+    """
+    s = (raw or "").strip()
+    if not s:
+        return ""
+
+    if s.lower().startswith("basic "):
+        s = s[6:].strip()
+
+    # If they pasted client_id:client_secret, encode it.
+    if ":" in s and " " not in s:
+        return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
+    # Otherwise assume it's already base64
+    return s
+
+
+def _basic_headers(settings: Settings) -> dict[str, str]:
+    basic = _maybe_base64_basic_key(getattr(settings, "JOYSTICK_BASIC_KEY", "") or "")
+    if not basic:
+        raise ValueError("JOYSTICK_BASIC_KEY is missing (must be base64(client_id:client_secret))")
+
     return {
-        "Authorization": f"Basic {settings.JOYSTICK_BASIC_KEY}",
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {basic}",
         "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
     }
 
 
-def _post_form(url: str, payload: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    data = urllib.parse.urlencode(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    for k, v in (headers or {}).items():
-        req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.read().decode("utf-8", errors="replace")
-    return json.loads(raw)
-
-
-def _parse_token_response(data: Dict[str, Any]) -> TokenResponse:
-    # Docs show:
-    #  {
-    #    "access_token": "JSON_WEB_TOKEN",
-    #    "token_type": "Bearer",
-    #    "expires_in": 1682098467,
-    #    "refresh_token": "REFRESH_TOKEN"
-    #  }
-    access_token = str(data.get("access_token", "") or "")
-    token_type = str(data.get("token_type", "") or "")
-    refresh_token = str(data.get("refresh_token", "") or "")
-    expires_in = int(data.get("expires_in", 0) or 0)
-
-    if not access_token or not refresh_token:
-        raise RuntimeError(f"Invalid token response: {data}")
-
-    # Joystick's docs show expires_in as a large number in examples; treat it as seconds.
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=max(0, expires_in))
-    return TokenResponse(
-        access_token=access_token,
-        token_type=token_type or "Bearer",
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-        expires_at=expires_at,
+def _post_form(url: str, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    qs = urllib.parse.urlencode({k: str(v) for k, v in params.items() if v is not None})
+    req = urllib.request.Request(
+        url=f"{url}?{qs}",
+        method="POST",
+        headers=headers,
     )
 
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            if not body:
+                return {}
+            return json.loads(body)
+    except urllib.error.HTTPError as e:
+        # Very important: surface Joystick's response body, otherwise we’re blind.
+        err_body = ""
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            err_body = ""
+        raise RuntimeError(f"Joystick token endpoint HTTP {e.code}: {err_body or e.reason}") from e
 
-def exchange_code_for_token(settings: Settings, code: str) -> TokenResponse:
-    if not settings.JOYSTICK_CLIENT_ID or not settings.JOYSTICK_CLIENT_SECRET:
-        raise RuntimeError("Missing JOYSTICK_CLIENT_ID / JOYSTICK_CLIENT_SECRET")
 
-    # Docs: redirect_uri is "not currently used, but may be used in the future"
-    # We'll send it if configured (otherwise "unused" keeps parity with docs examples).
-    redirect_uri = (settings.JOYSTICK_REDIRECT_URI or "").strip() or "unused"
+def exchange_code_for_token(settings: Settings, code: str, *, state: str | None = None) -> OAuthToken:
+    """Exchange authorization code for access+refresh tokens.
 
+    Per Joystick docs:
+      POST https://joystick.tv/api/oauth/token?redirect_uri=...&code=...&grant_type=authorization_code
+      Authorization: Basic base64(client_id:client_secret)
+    """
     payload = {
-        "redirect_uri": redirect_uri,
+        "redirect_uri": getattr(settings, "JOYSTICK_REDIRECT_URI", "") or "unused",
         "code": code,
         "grant_type": "authorization_code",
     }
 
-    data = _post_form(TOKEN_URL, payload, headers=_basic_headers(settings))
-    return _parse_token_response(data)
+    headers = _basic_headers(settings)
+
+    # Optional: pass arbitrary state through header if you want (Joystick supports X-JOYSTICK-STATE).
+    if state:
+        headers["X-JOYSTICK-STATE"] = str(state)
+
+    data = _post_form(TOKEN_URL, payload, headers=headers)
+
+    return OAuthToken(
+        access_token=str(data.get("access_token", "")),
+        token_type=str(data.get("token_type", "Bearer")),
+        expires_in=int(data.get("expires_in", 0) or 0),
+        refresh_token=str(data.get("refresh_token", "")),
+    )
 
 
-def refresh_access_token(settings: Settings, refresh_token: str) -> TokenResponse:
-    if not settings.JOYSTICK_CLIENT_ID or not settings.JOYSTICK_CLIENT_SECRET:
-        raise RuntimeError("Missing JOYSTICK_CLIENT_ID / JOYSTICK_CLIENT_SECRET")
-
+def refresh_access_token(settings: Settings, refresh_token: str, *, state: str | None = None) -> OAuthToken:
     payload = {
-        "grant_type": "refresh_token",
         "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
     }
 
-    data = _post_form(TOKEN_URL, payload, headers=_basic_headers(settings))
-    return _parse_token_response(data)
+    headers = _basic_headers(settings)
+    if state:
+        headers["X-JOYSTICK-STATE"] = str(state)
+
+    data = _post_form(TOKEN_URL, payload, headers=headers)
+
+    return OAuthToken(
+        access_token=str(data.get("access_token", "")),
+        token_type=str(data.get("token_type", "Bearer")),
+        expires_in=int(data.get("expires_in", 0) or 0),
+        refresh_token=str(data.get("refresh_token", "")),
+    )
