@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""Admin + app factory.
+
+This file intentionally contains the full wiring for:
+- Admin UI routes (/admin/*)
+- TTS endpoints (/tts/*)
+- Root redirect (/ -> /admin)
+- Startup/shutdown tasks (Joystick client + QueueWorker)
+"""
+
 import asyncio
 import random
 from datetime import datetime
@@ -13,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, bootstrap
 from app.core.items import ItemsService
 from app.core.models import QueueItem, Redeem, User
 from app.core.overlay_bus import OverlayBus
@@ -48,10 +57,8 @@ def _admin_auth(settings: Settings, request: Request) -> None:
 
 def _wants_json(request: Request) -> bool:
     accept = (request.headers.get("accept") or "").lower()
-    # Browsers submitting forms typically prefer text/html.
     if "application/json" in accept:
         return True
-    # HTMX / AJAX calls may set this header.
     if (request.headers.get("x-requested-with") or "").lower() == "xmlhttprequest":
         return True
     return False
@@ -64,6 +71,9 @@ def _redirect_back_to_admin(request: Request) -> RedirectResponse:
 
 
 def create_app(settings: Settings) -> FastAPI:
+    # Ensure DB schema exists / is migrated before the app starts handling requests.
+    bootstrap()
+
     global _bus
     app = FastAPI(title="Joystick Bot — v1.9.0")
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -120,7 +130,6 @@ def create_app(settings: Settings) -> FastAPI:
         from app.core.fileops import make_backup, write_text_file
 
         spin_path, prize_path, backups_dir = _tts_paths()
-        # backup current before overwrite
         make_backup(spin_path, backups_dir, "spin_lines")
         make_backup(prize_path, backups_dir, "prize_lines")
         write_text_file(spin_path, spin_lines)
@@ -261,7 +270,9 @@ def create_app(settings: Settings) -> FastAPI:
         ps = PointsService(db)
         new_bal = ps.adjust(u.id, delta=int(delta), reason=str(reason or "admin_adjust"), allow_negative_balance=False)
         if _wants_json(request):
-            return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "delta": int(delta), "new_balance": new_bal})
+            return JSONResponse(
+                {"ok": True, "user": {"id": u.id, "name": u.name}, "delta": int(delta), "new_balance": new_bal}
+            )
         return _redirect_back_to_admin(request)
 
     @admin.get("/api/users/transactions")
