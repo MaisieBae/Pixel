@@ -1,0 +1,23 @@
+{
+  "redeem.fireworks": [
+    {
+      "address": "/avatar/parameters/Fireworks",
+      "type": "pulse",
+      "duration": 0.5
+    }
+  ],
+  "redeem.shock": [
+    {
+      "address": "/avatar/parameters/Shock",
+      "type": "pulse",
+      "duration": 0.25
+    }
+  ],
+  "event.level_up": [
+    {
+      "address": "/avatar/parameters/LevelUp",
+      "type": "pulse",
+      "duration": 0.4
+    }
+  ]
+}
