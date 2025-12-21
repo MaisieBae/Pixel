@@ -399,39 +399,75 @@ def create_app(settings: Settings) -> FastAPI:
         rs.seed_defaults(settings)
         return JSONResponse({"ok": True, "redeems": rs.list()})
 
-    app.include_router(admin)
+    # NOTE: include_router(admin) moved to the end so routes defined below are registered.
     # ---------- Joystick Installations / Messaging (v2.1.0) ----------
     @app.get("/joystick/oauth/callback")
-    async def joystick_oauth_callback(request: Request, code: str = "", channelId: str = "", streamer: str = "", db: Session = Depends(get_db)):
+    async def joystick_oauth_callback(
+        request: Request,
+        code: str = "",
+        state: str = "",
+        db: Session = Depends(get_db),
+    ):
         """OAuth callback for Joystick bot installation.
 
-        Joystick redirects here with a `code`. Some installs can also provide a `channelId`.
-        We store tokens + channel mapping in DB so the ActionCable gateway can send to chat/whisper.
+        Per Joystick docs, the redirect back to your app includes `code` and optional `state`.
+        The docs do NOT guarantee a `channelId` query param in the callback URL, so we:
+          1) look for `channelId` / `channel_id` query param if present
+          2) fall back to settings JOYSTICK_DEFAULT_CHANNEL_ID / JOYSTICK_ROOM_ID if set
+          3) best-effort decode the JWT access_token for a channel identifier claim
+          4) if still unknown, store the install under channel_id = "UNKNOWN"
+
+        You can later update the channel mapping in DB via admin UI (or set JOYSTICK_DEFAULT_CHANNEL_ID).
         """
         if not code:
             raise HTTPException(status_code=400, detail="Missing code")
 
-        # Exchange code -> tokens (blocking IO done in a thread)
-        token = await asyncio.to_thread(exchange_code_for_token, settings, code)
+        from app.core.joystick_oauth import exchange_code_for_token, extract_channel_id_from_access_token
+        from app.core.models import JoystickInstall
+        from sqlalchemy import select
 
-        # Determine channelId: use query param if provided, otherwise fall back to legacy setting.
-        cid = (channelId or "").strip() or (settings.JOYSTICK_ROOM_ID or "").strip()
+        # Query param might or might not be present (Joystick docs only promise code/state).
+        qp = request.query_params
+        q_channel = (qp.get("channelId") or qp.get("channel_id") or "").strip()
+        q_streamer = (qp.get("streamer") or qp.get("username") or "").strip()
+
+        # Exchange code -> tokens (blocking IO done in a thread)
+        token = await asyncio.to_thread(exchange_code_for_token, settings, code, state=state or None)
+
+        # Determine channel id with fallbacks
+        cid = (
+            q_channel
+            or (getattr(settings, "JOYSTICK_DEFAULT_CHANNEL_ID", "") or "").strip()
+            or (getattr(settings, "JOYSTICK_ROOM_ID", "") or "").strip()
+        )
         if not cid:
-            # We still store tokens, but sending chat will require setting channel_id later.
+            cid = extract_channel_id_from_access_token(token.access_token) or ""
+
+        if not cid:
             cid = "UNKNOWN"
 
         inst = db.scalar(select(JoystickInstall).where(JoystickInstall.channel_id == cid))
         if inst is None:
             inst = JoystickInstall(channel_id=cid)
-        inst.streamer = (streamer or inst.streamer or "").strip()
+
+        inst.streamer = (q_streamer or inst.streamer or "").strip()
         inst.access_token = token.access_token
         inst.refresh_token = token.refresh_token
         inst.expires_at = token.expires_at.replace(tzinfo=None) if token.expires_at else None
         inst.updated_at = datetime.utcnow()
+
         db.add(inst)
         db.commit()
 
-        return HTMLResponse(f"<html><body><h3>Joystick installed</h3><p>channelId: {cid}</p><p>You can close this window.</p></body></html>")
+        # Keep the page simple and explicit.
+        html = (
+            "<html><body>"
+            "<h3>Joystick installed</h3>"
+            f"<p>channelId: {cid}</p>"
+            "<p>You can close this window.</p>"
+            "</body></html>"
+        )
+        return HTMLResponse(html)
 
     @admin.get("/api/joystick/installs")
     async def api_joystick_installs(request: Request, db: Session = Depends(get_db)):
@@ -533,20 +569,32 @@ def create_app(settings: Settings) -> FastAPI:
             # Commands / redeems
             if is_command(text):
                 res = handle_chat(db, settings, user, text)
-                if res.get("say"):
+                say_text = str(res.get("say") or "").strip()
+                if say_text:
+                    # Keep existing behavior: command responses go to TTS queue
                     db.add(
                         QueueItem(
                             kind="tts",
                             status="pending",
                             payload_json={
                                 "user": user,
-                                "message": str(res.get("say")),
+                                "message": say_text,
                                 "prefix": False,
                                 "source": "cmd",
                             },
                         )
                     )
                     db.commit()
+
+                    # Also post the response back into Joystick chat so commands feel responsive on-site.
+                    # This is additive (doesn't replace TTS).
+                    global _js
+                    if _js:
+                        try:
+                            await _js.send_message(say_text)
+                        except Exception:
+                            # Don't crash chat handling if Joystick send fails.
+                            pass
                 return
 
             # Passive XP for chat
@@ -624,5 +672,8 @@ def create_app(settings: Settings) -> FastAPI:
             await _js.stop()
         if _worker:
             _worker.stop()
+
+    app.include_router(admin)
+
 
     return app
