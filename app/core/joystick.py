@@ -125,9 +125,25 @@ class JoystickClient:
         return ""
 
     async def _send_action(self, action_payload: dict) -> None:
-        if not self._ws or self._ws.closed:
+        ws = self._ws
+        if not ws:
             print("[joystick] Cannot send action (not connected)")
             return
+
+        # websockets library has changed its client connection type across versions.
+        # Some versions expose `.closed`, others expose `.close_code` / `.state`.
+        # We avoid hard-binding to a specific attribute and instead do a best-effort
+        # check + handle send failures gracefully.
+        try:
+            if hasattr(ws, "closed") and bool(getattr(ws, "closed")):
+                print("[joystick] Cannot send action (socket closed)")
+                return
+            if hasattr(ws, "close_code") and getattr(ws, "close_code") is not None:
+                print("[joystick] Cannot send action (socket closed)")
+                return
+        except Exception:
+            # If the object doesn't behave as expected, we'll just attempt the send.
+            pass
         identifier = json.dumps({"channel": "GatewayChannel"})
         data = json.dumps(action_payload)
         msg = {
@@ -135,7 +151,14 @@ class JoystickClient:
             "identifier": identifier,
             "data": data,
         }
-        await self._ws.send(json.dumps(msg))
+        try:
+            await ws.send(json.dumps(msg))
+        except Exception as e:
+            # Do not crash callers (admin endpoints / command replies).
+            # Mark connection as unusable so the reconnect loop can restore it.
+            print(f"[joystick] send failed: {e}")
+            self._ws = None
+            return
 
     # --------------------------
     # Dev/Sim helpers (work in ALL modes)
