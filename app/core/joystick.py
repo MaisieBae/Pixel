@@ -58,6 +58,10 @@ class JoystickClient:
         self._ws: Optional[WebSocketClientProtocol] = None
         self._last_seen_channel_id: Optional[str] = None
 
+        # Debug logging toggle. Keep default False to avoid noisy logs.
+        # You can enable by setting JOYSTICK_DEBUG=1 and wiring it through Settings if desired.
+        self.debug: bool = False
+
         # reconnect backoff
         self._backoff_s = 1.0
 
@@ -197,6 +201,9 @@ class JoystickClient:
                     self._ws = ws
                     self._backoff_s = 1.0
 
+                    if self.debug:
+                        print("[joystick] connected")
+
                     # Subscribe to GatewayChannel
                     sub = {
                         "command": "subscribe",
@@ -221,6 +228,17 @@ class JoystickClient:
         self._ws = None
 
     async def _handle_raw(self, raw: str) -> None:
+        # websockets may yield str or bytes depending on version/config
+        if isinstance(raw, (bytes, bytearray)):
+            try:
+                raw = raw.decode("utf-8", errors="replace")
+            except Exception:
+                return
+
+        if self.debug:
+            # Useful when diagnosing new/changed payload shapes.
+            print(f"[joystick] <= {raw[:400]}")
+
         try:
             data = json.loads(raw)
         except Exception:
@@ -229,10 +247,25 @@ class JoystickClient:
         # ActionCable control messages:
         # {"type":"welcome"}, {"type":"ping","message":...}, {"type":"confirm_subscription",...}
         if isinstance(data, dict) and data.get("type") in ("welcome", "ping", "confirm_subscription", "reject_subscription"):
+            if self.debug and data.get("type") in ("confirm_subscription", "reject_subscription"):
+                print(f"[joystick] subscription: {data.get('type')}")
             return
 
         # Actual payload is typically: {"identifier":..., "message": {...}}
         msg = data.get("message") if isinstance(data, dict) else None
+
+        # Some servers send message as a JSON string; handle both.
+        if isinstance(msg, str):
+            try:
+                msg = json.loads(msg)
+            except Exception:
+                msg = None
+
+        # Some implementations wrap again: {"message": {...}}.
+        # IMPORTANT: do NOT unwrap if this already looks like the event envelope.
+        if isinstance(msg, dict) and "event" not in msg and isinstance(msg.get("message"), dict):
+            msg = msg.get("message")
+
         if not isinstance(msg, dict):
             return
 
@@ -241,38 +274,100 @@ class JoystickClient:
         if isinstance(ch, str) and ch:
             self._last_seen_channel_id = ch
 
+        # Joystick's gateway messages put the high-level kind in `event`.
+        # `type` is used for sub-types (e.g. ChatMessage: new_message, UserPresence: enter_stream, StreamEvent: Tipped).
         event = (msg.get("event") or "").strip()
-        if event == "ChatMessage":
-            payload = msg.get("payload") or {}
-            user = payload.get("username") or payload.get("user") or ""
-            text = payload.get("text") or payload.get("message") or ""
-            await self._dispatch("chat", {"user": user, "text": text})
+        ev = event.lower()
+        if ev in ("chatmessage", "chat_message"):
+            # Joystick's documented ChatMessage shape has `text` at top-level and user info under `author`.
+            # However, older/internal shapes may still nest a payload.
+            text = msg.get("text") or ""
+            author = msg.get("author") or {}
+            user = ""
+            if isinstance(author, dict):
+                user = author.get("username") or author.get("slug") or author.get("displayName") or ""
+
+            if not text or not user:
+                payload = msg.get("payload") or msg.get("data") or {}
+                if isinstance(payload, dict) and isinstance(payload.get("message"), dict):
+                    payload = payload.get("message")
+                if not user:
+                    u = payload.get("username") or payload.get("user") or payload.get("sender") or payload.get("display_name") or ""
+                    if isinstance(u, dict):
+                        u = u.get("username") or u.get("name") or u.get("display_name") or ""
+                    user = str(u)
+                if not text:
+                    t = payload.get("text") or payload.get("body") or ""
+                    if not t and isinstance(payload.get("message"), str):
+                        t = payload.get("message")
+                    if not t and isinstance(payload.get("content"), str):
+                        t = payload.get("content")
+                    text = str(t)
+
+            if user or text:
+                await self._dispatch("chat", {"user": str(user), "text": str(text)})
             return
 
-        if event == "UserPresence":
-            # payload: {"type":"enter_stream"|"leave_stream", "username":...}
-            payload = msg.get("payload") or {}
-            ptype = (payload.get("type") or "").lower()
-            user = payload.get("username") or payload.get("user") or ""
+        if ev in ("userpresence","user_presence"):
+            # Joystick's documented UserPresence shape:
+            #   event: "UserPresence"
+            #   type: "enter_stream"|"leave_stream"
+            #   text: "username"
+            ptype = (msg.get("type") or "").lower()
+            user = msg.get("text") or ""
+            if not user:
+                payload = msg.get("payload") or {}
+                user = payload.get("username") or payload.get("user") or ""
             if ptype == "enter_stream":
                 await self._dispatch("dropin", {"user": user})
             return
 
-        if event == "StreamEvent":
-            payload = msg.get("payload") or {}
-            stype = (payload.get("type") or "").lower()
-            user = payload.get("username") or payload.get("user") or ""
+        if ev in ("streamevent","stream_event"):
+            # Joystick's documented StreamEvent shape:
+            #   event: "StreamEvent"
+            #   type: e.g. "Tipped", "Followed", "WheelSpinClaimed", ...
+            #   metadata: JSON string with keys like who/how_much/... (varies by type)
+            stype = (msg.get("type") or "").strip()
+            stype_l = stype.lower()
 
-            # Common types in docs: Tipped, Followed, WheelSpinClaimed, ...
-            if "follow" in stype:
+            meta_raw = msg.get("metadata")
+            meta: dict = {}
+            if isinstance(meta_raw, str) and meta_raw.strip():
+                try:
+                    meta = json.loads(meta_raw)
+                except Exception:
+                    meta = {}
+
+            user = ""
+            if isinstance(meta, dict):
+                user = str(meta.get("who") or meta.get("username") or meta.get("user") or "")
+
+            # Fall back to older shapes
+            if not user:
+                payload = msg.get("payload") or {}
+                user = payload.get("username") or payload.get("user") or ""
+
+            if "follow" in stype_l:
                 await self._dispatch("follow", {"user": user})
                 return
-            if "sub" in stype:
-                months = int(payload.get("months", 1) or 1)
+
+            if "sub" in stype_l or "subscriber" in stype_l or "gift" in stype_l:
+                months = 1
+                if isinstance(meta, dict) and meta.get("months") is not None:
+                    try:
+                        months = int(meta.get("months") or 1)
+                    except Exception:
+                        months = 1
                 await self._dispatch("sub", {"user": user, "months": months})
                 return
-            if "tip" in stype:
-                tokens = int(payload.get("tokens", payload.get("amount", 0)) or 0)
+
+            if "tip" in stype_l or "tipped" in stype_l:
+                tokens = 0
+                if isinstance(meta, dict):
+                    try:
+                        tokens = int(meta.get("how_much") or meta.get("tokens") or meta.get("amount") or 0)
+                    except Exception:
+                        tokens = 0
                 await self._dispatch("tip", {"user": user, "tokens": tokens})
                 return
             return

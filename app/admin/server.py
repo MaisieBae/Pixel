@@ -568,6 +568,10 @@ def create_app(settings: Settings) -> FastAPI:
 
             # Commands / redeems
             if is_command(text):
+                try:
+                    print(f"[cmd] {user}: {text}")
+                except Exception:
+                    pass
                 res = handle_chat(db, settings, user, text)
                 say_text = str(res.get("say") or "").strip()
                 if say_text:
