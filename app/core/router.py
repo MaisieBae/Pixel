@@ -7,10 +7,11 @@ from app.core.redeems import RedeemsService
 from app.core.sfx import validate_sound_file
 from app.core.config import Settings
 from app.core.models import QueueItem
+from app.core.xp import XpService
 
 
 HELP_TEXT = (
-    "Commands: !tts <msg>, !pixel <msg>, !sound <name>, !listsounds [page], !spin, !clip"
+    "Commands: !tts <msg>, !pixel <msg>, !sound <name>, !listsounds [page], !spin, !xp, !level, !clip"
 )
 
 
@@ -37,6 +38,15 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
 
     if cmd == "!help":
         return {"ok": True, "say": HELP_TEXT}
+
+    if cmd == "!xp":
+        xs = XpService(db, settings)
+        return {"ok": True, "say": xs.get_progress_text(user)}
+
+    if cmd == "!level":
+        xs = XpService(db, settings)
+        u, xp = xs.ensure_user_xp(user)
+        return {"ok": True, "say": f"@{u.name} — Level {xp.level} (XP {xp.total_xp})"}
 
     if cmd == "!tts":
         if not args:

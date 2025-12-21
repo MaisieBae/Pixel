@@ -43,6 +43,16 @@ class XP(Base):
     user: Mapped[User] = relationship("User", back_populates="xp")
 
 
+class XPTransaction(Base):
+    __tablename__ = "xp_transactions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    delta: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(40), default="")  # chat|follow|sub|tip|dropin|admin|reward
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Redeem(Base):
     __tablename__ = "redeems"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -96,3 +106,22 @@ class QueueItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class JoystickInstall(Base):
+    __tablename__ = "joystick_installs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # The unique hash used by Joystick to identify the stream channel for sending messages.
+    channel_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+
+    # Human-friendly streamer identifier (if available).
+    streamer: Mapped[str] = mapped_column(String(120), default="", index=True)
+
+    # OAuth tokens for this installation (per streamer).
+    access_token: Mapped[str] = mapped_column(String(255), default="")
+    refresh_token: Mapped[str] = mapped_column(String(255), default="")
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    installed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

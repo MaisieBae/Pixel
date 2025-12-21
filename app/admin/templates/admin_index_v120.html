@@ -80,8 +80,10 @@
           <tr>
             <th>User</th>
             <th>Last Seen</th>
-            <th>Grant</th>
-            <th>Adjust</th>
+            <th>XP</th>
+            <th>Grant Points</th>
+            <th>Adjust Points</th>
+            <th>Adjust XP</th>
           </tr>
         </thead>
         <tbody>
@@ -89,6 +91,14 @@
           <tr>
             <td><b>{{ u.name }}</b> (#{{ u.id }})</td>
             <td><code>{{ u.last_seen }}</code></td>
+            <td>
+              {% set x = xp_map.get(u.id) %}
+              {% if x %}
+                <b>L{{ x.level }}</b> • {{ x.total_xp }} XP
+              {% else %}
+                <span class="muted">(no XP yet)</span>
+              {% endif %}
+            </td>
             <td>
               <form method="post" action="/admin/api/users/grant" style="display:flex; gap:6px; align-items:center;">
                 <input type="hidden" name="user_id" value="{{ u.id }}" />
@@ -102,6 +112,14 @@
                 <input type="hidden" name="user_id" value="{{ u.id }}" />
                 <input name="delta" type="number" step="1" style="width:90px" placeholder="+/-" required />
                 <input name="reason" style="width:140px" placeholder="reason" value="admin_adjust" />
+                <button>Apply</button>
+              </form>
+            </td>
+            <td>
+              <form method="post" action="/admin/api/users/xp/adjust" style="display:flex; gap:6px; align-items:center;">
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input name="delta" type="number" step="1" style="width:90px" placeholder="+/-" required />
+                <input name="reason" style="width:140px" placeholder="reason" value="admin_xp_adjust" />
                 <button>Apply</button>
               </form>
             </td>
@@ -151,6 +169,47 @@
       </thead>
       <tbody>
         <tr><td colspan="5" class="muted">Click “Load”.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>XP Audit Log</h2>
+  <p class="muted">View recent XP transactions per user.</p>
+
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <label>
+      User:
+      <select id="xp_audit_user">
+        {% for u in users %}
+          <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      Limit:
+      <input id="xp_audit_limit" type="number" step="1" value="50" style="width:90px" />
+    </label>
+
+    <button type="button" id="xp_audit_load">Load</button>
+    <span id="xp_audit_status" class="muted"></span>
+  </div>
+
+  <div style="overflow:auto; margin-top:10px;">
+    <table class="table" id="xp_audit_table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Delta</th>
+          <th>Reason</th>
+          <th>Source</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="5" class="muted">Click Load.</td></tr>
       </tbody>
     </table>
   </div>
@@ -345,6 +404,68 @@
     }
 
     if(btn) btn.addEventListener('click', loadAudit);
+  })();
+</script>
+
+<script>
+  (function(){
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const hdrs = token ? {'x-admin-token': token} : {};
+
+    const btn = document.getElementById('xp_audit_load');
+    const sel = document.getElementById('xp_audit_user');
+    const limitEl = document.getElementById('xp_audit_limit');
+    const status = document.getElementById('xp_audit_status');
+    const tbody = document.querySelector('#xp_audit_table tbody');
+
+    async function loadXpAudit(){
+      if(!sel) return;
+      const user_id = sel.value;
+      const limit = limitEl && limitEl.value ? parseInt(limitEl.value, 10) : 50;
+      status.textContent = 'loading…';
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+
+      try{
+        const qs = new URLSearchParams();
+        qs.set('user_id', user_id);
+        qs.set('limit', String(isNaN(limit) ? 50 : limit));
+        if(token) qs.set('token', token);
+
+        const r = await fetch('/admin/api/users/xp/transactions?' + qs.toString(), {headers: hdrs});
+        const j = await r.json();
+        if(!j.ok){
+          status.textContent = 'error';
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">Error.</td></tr>';
+          return;
+        }
+
+        const rows = j.transactions || [];
+        if(rows.length === 0){
+          status.textContent = '0 rows';
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No XP transactions.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for(const t of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${t.id}</td>
+            <td>${t.delta}</td>
+            <td>${(t.reason||'')}</td>
+            <td>${(t.source||'')}</td>
+            <td><code>${t.created_at}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+        status.textContent = rows.length + ' row(s)';
+      }catch(err){
+        status.textContent = 'error';
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error: ' + err + '</td></tr>';
+      }
+    }
+
+    if(btn) btn.addEventListener('click', loadXpAudit);
   })();
 </script>
 

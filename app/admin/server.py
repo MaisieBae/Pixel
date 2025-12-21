@@ -22,15 +22,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.joystick_oauth import exchange_code_for_token, refresh_access_token
 from app.core.db import SessionLocal, bootstrap
 from app.core.items import ItemsService
-from app.core.models import QueueItem, Redeem, User
+from app.core.models import QueueItem, Redeem, User, XP, JoystickInstall
 from app.core.overlay_bus import OverlayBus
 from app.core.points import PointsService
 from app.core.queue import QueueService
 from app.core.redeems import RedeemsService
 from app.core.tts import TTSService
-from app.joystick.client import JoystickCallbacks, JoystickClient
+from app.core.joystick import JoystickCallbacks, JoystickClient
+from app.core.router import handle_chat, is_command
+from app.core.xp import XpService
+from app.core.xp_policy import XpEvent, is_xp_eligible_chat
 from app.core.consumers import QueueWorker
 
 
@@ -75,7 +79,7 @@ def create_app(settings: Settings) -> FastAPI:
     bootstrap()
 
     global _bus
-    app = FastAPI(title="Joystick Bot — v1.9.0")
+    app = FastAPI(title="Joystick Bot — v2.0.0")
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
     _bus = OverlayBus()
@@ -88,12 +92,15 @@ def create_app(settings: Settings) -> FastAPI:
         rs.seed_defaults(settings)
 
         users = list(db.scalars(select(User).order_by(User.last_seen.desc()).limit(25)))
+        # XP rows for the dashboard (avoid N+1 in templates)
+        xp_rows = list(db.scalars(select(XP).where(XP.user_id.in_([u.id for u in users])))) if users else []
+        xp_map = {x.user_id: x for x in xp_rows}
         redeems = rs.list()
         items = ItemsService(db).list_items()
 
         return templates.TemplateResponse(
             "admin_index_v120.html",
-            {"request": request, "users": users, "redeems": redeems, "items": items},
+            {"request": request, "users": users, "xp_map": xp_map, "redeems": redeems, "items": items},
         )
 
     # ---------- TTS Lines Editor (Spin/Prize) ----------
@@ -300,6 +307,51 @@ def create_app(settings: Settings) -> FastAPI:
             }
         )
 
+    # ---------- XP (v2.0.0) ----------
+    @admin.post("/api/users/xp/adjust")
+    async def api_users_xp_adjust(
+        request: Request,
+        user_id: int = Form(...),
+        delta: int = Form(...),
+        reason: str = Form("admin_xp_adjust"),
+        db: Session = Depends(get_db),
+    ):
+        _admin_auth(settings, request)
+        u = db.get(User, int(user_id))
+        if u is None:
+            return JSONResponse({"ok": False, "error": "User not found"}, status_code=404)
+        xs = XpService(db, settings)
+        xs.adjust(u.name, int(delta), reason=str(reason or "admin_xp_adjust"), source="admin")
+        if _wants_json(request):
+            _, xp = xs.ensure_user_xp(u.name)
+            return JSONResponse({"ok": True, "user": {"id": u.id, "name": u.name}, "level": xp.level, "total_xp": xp.total_xp})
+        return _redirect_back_to_admin(request)
+
+    @admin.get("/api/users/xp/transactions")
+    async def api_users_xp_transactions(request: Request, user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        u = db.get(User, int(user_id))
+        if u is None:
+            return JSONResponse({"ok": False, "error": "User not found"}, status_code=404)
+        xs = XpService(db, settings)
+        rows = xs.list_transactions(u.id, limit=int(limit))
+        return JSONResponse(
+            {
+                "ok": True,
+                "user": {"id": u.id, "name": u.name},
+                "transactions": [
+                    {
+                        "id": r.id,
+                        "delta": r.delta,
+                        "reason": r.reason,
+                        "source": r.source,
+                        "created_at": r.created_at.isoformat() + "Z",
+                    }
+                    for r in rows
+                ],
+            }
+        )
+
     # ---------- Redeems CRUD ----------
     @admin.post("/api/redeems/upsert")
     async def api_redeems_upsert(
@@ -348,6 +400,84 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse({"ok": True, "redeems": rs.list()})
 
     app.include_router(admin)
+    # ---------- Joystick Installations / Messaging (v2.1.0) ----------
+    @app.get("/joystick/oauth/callback")
+    async def joystick_oauth_callback(request: Request, code: str = "", channelId: str = "", streamer: str = "", db: Session = Depends(get_db)):
+        """OAuth callback for Joystick bot installation.
+
+        Joystick redirects here with a `code`. Some installs can also provide a `channelId`.
+        We store tokens + channel mapping in DB so the ActionCable gateway can send to chat/whisper.
+        """
+        if not code:
+            raise HTTPException(status_code=400, detail="Missing code")
+
+        # Exchange code -> tokens (blocking IO done in a thread)
+        token = await asyncio.to_thread(exchange_code_for_token, settings, code)
+
+        # Determine channelId: use query param if provided, otherwise fall back to legacy setting.
+        cid = (channelId or "").strip() or (settings.JOYSTICK_ROOM_ID or "").strip()
+        if not cid:
+            # We still store tokens, but sending chat will require setting channel_id later.
+            cid = "UNKNOWN"
+
+        inst = db.scalar(select(JoystickInstall).where(JoystickInstall.channel_id == cid))
+        if inst is None:
+            inst = JoystickInstall(channel_id=cid)
+        inst.streamer = (streamer or inst.streamer or "").strip()
+        inst.access_token = token.access_token
+        inst.refresh_token = token.refresh_token
+        inst.expires_at = token.expires_at.replace(tzinfo=None) if token.expires_at else None
+        inst.updated_at = datetime.utcnow()
+        db.add(inst)
+        db.commit()
+
+        return HTMLResponse(f"<html><body><h3>Joystick installed</h3><p>channelId: {cid}</p><p>You can close this window.</p></body></html>")
+
+    @admin.get("/api/joystick/installs")
+    async def api_joystick_installs(request: Request, db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rows = list(db.scalars(select(JoystickInstall).order_by(JoystickInstall.updated_at.desc())))
+        return JSONResponse({
+            "ok": True,
+            "installs": [
+                {
+                    "id": r.id,
+                    "channel_id": r.channel_id,
+                    "streamer": r.streamer,
+                    "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                }
+                for r in rows
+            ],
+        })
+
+    @admin.post("/api/joystick/send-message")
+    async def api_joystick_send_message(
+        request: Request,
+        text: str = Form(...),
+        channel_id: str = Form(""),
+    ):
+        _admin_auth(settings, request)
+        global _js
+        if not _js:
+            return JSONResponse({"ok": False, "error": "Joystick client not running"}, status_code=400)
+        await _js.send_message(text, channel_id=(channel_id or None))
+        return JSONResponse({"ok": True})
+
+    @admin.post("/api/joystick/send-whisper")
+    async def api_joystick_send_whisper(
+        request: Request,
+        username: str = Form(...),
+        text: str = Form(...),
+        channel_id: str = Form(""),
+    ):
+        _admin_auth(settings, request)
+        global _js
+        if not _js:
+            return JSONResponse({"ok": False, "error": "Joystick client not running"}, status_code=400)
+        await _js.send_whisper(username, text, channel_id=(channel_id or None))
+        return JSONResponse({"ok": True})
+
 
     # ---------- Overlay websocket ----------
     @app.websocket("/ws/overlay")
@@ -400,10 +530,29 @@ def create_app(settings: Settings) -> FastAPI:
                 )
                 db.commit()
 
-            # Random Pixel response
-            # Only for non-commands to avoid replying to !help, !spin, etc.
-            if text.strip().startswith("!"):
+            # Commands / redeems
+            if is_command(text):
+                res = handle_chat(db, settings, user, text)
+                if res.get("say"):
+                    db.add(
+                        QueueItem(
+                            kind="tts",
+                            status="pending",
+                            payload_json={
+                                "user": user,
+                                "message": str(res.get("say")),
+                                "prefix": False,
+                                "source": "cmd",
+                            },
+                        )
+                    )
+                    db.commit()
                 return
+
+            # Passive XP for chat
+            if is_xp_eligible_chat(text, min_len=1):
+                xs = XpService(db, settings)
+                xs.handle_event(XpEvent(type="chat", user=user, metadata={"text": text}, source="joystick"))
 
             p = float(getattr(settings, "PPLX_RANDOM_REPLY_PROB", 0.0) or 0.0)
             if p <= 0:
@@ -421,15 +570,27 @@ def create_app(settings: Settings) -> FastAPI:
             db.commit()
 
     async def _on_follow(user: str) -> None:
+        with SessionLocal() as db:
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="follow", user=user, metadata={}, source="joystick"))
         return
 
     async def _on_sub(user: str, months: int) -> None:
+        with SessionLocal() as db:
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="sub", user=user, metadata={"months": int(months)}, source="joystick"))
         return
 
     async def _on_tip(user: str, tokens: int) -> None:
+        with SessionLocal() as db:
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="tip", user=user, metadata={"tokens": int(tokens)}, source="joystick"))
         return
 
     async def _on_dropin(user: str) -> None:
+        with SessionLocal() as db:
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="dropin", user=user, metadata={}, source="joystick"))
         return
 
     # --- Startup tasks ---
@@ -438,7 +599,7 @@ def create_app(settings: Settings) -> FastAPI:
         global _js, _worker, _bg_tasks
         assert _bus is not None
 
-        _js = JoystickClient(settings.JOYSTICK_TOKEN, settings.JOYSTICK_ROOM_ID)
+        _js = JoystickClient(settings.JOYSTICK_BASIC_KEY, default_channel_id=settings.JOYSTICK_DEFAULT_CHANNEL_ID)
         _js.set_callbacks(
             JoystickCallbacks(
                 on_chat=_on_chat,

@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     # Joystick
     JOYSTICK_TOKEN: str = ""
     JOYSTICK_ROOM_ID: str = ""
+    # v2.1.0 Joystick gateway (ActionCable)
+    JOYSTICK_BASIC_KEY: str = ""
+    # OAuth install flow (store per-streamer tokens in DB)
+    JOYSTICK_CLIENT_ID: str = ""
+    JOYSTICK_CLIENT_SECRET: str = ""
+    JOYSTICK_REDIRECT_URI: str = ""
+    # Optional: default channel_id to send bot replies into (if empty, uses first installed)
+    JOYSTICK_DEFAULT_CHANNEL_ID: str = ""
 
     # Rotating notices
     ROTATE_NOTICE_SECONDS: int = 300
@@ -62,6 +70,27 @@ class Settings(BaseSettings):
     VRC_OSC_ENABLED: bool = False
     VRC_OSC_HOST: str = "127.0.0.1"
     VRC_OSC_PORT: int = 9000
+
+    # XP / Leveling (v2.0.0)
+    XP_ENABLED: bool = True
+    XP_BASE: int = 100
+    XP_EXPONENT: float = 1.8
+    XP_MAX_LEVEL: int = 9999
+
+    # XP event awards
+    XP_CHAT_AMOUNT: int = 1
+    XP_CHAT_COOLDOWN_SECONDS: int = 30
+    XP_FOLLOW_AMOUNT: int = 10
+    XP_FOLLOW_COOLDOWN_SECONDS: int = 3600
+    XP_DROPIN_AMOUNT: int = 5
+    XP_DROPIN_COOLDOWN_SECONDS: int = 3600
+    XP_SUB_AMOUNT: int = 50
+    XP_SUB_COOLDOWN_SECONDS: int = 3600
+    XP_TIP_PER_TOKEN: float = 0.1
+    XP_TIP_COOLDOWN_SECONDS: int = 30
+
+    # Optional level-up rewards
+    XP_LEVEL_REWARDS_FILE: str = "./data/level_rewards.json"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

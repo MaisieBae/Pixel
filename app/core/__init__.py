@@ -1,12 +1,11 @@
-"""Effect engine for applying prize/redeem outcomes.
+"""Core package.
 
-Design goals:
- - Keep QueueWorker thin (no points/items/OSC logic).
- - Effects are declarative (JSON describes *what*, handlers implement *how*).
- - Handlers are small, testable units.
+Keep this file lightweight: importing `app.core` should not fail because of optional modules.
+
+Effect system is implemented under `app.core.effects`.
 """
 
-from .engine import EffectEngine, effects_from_prize
-from .types import EffectContext, EffectResult
+from .effects.engine import EffectEngine, effects_from_prize
+from .effects.types import EffectContext, EffectResult
 
 __all__ = ["EffectEngine", "effects_from_prize", "EffectContext", "EffectResult"]
