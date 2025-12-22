@@ -164,7 +164,7 @@
 
   <!-- Centered reveal wheel -->
   <div id="wheel-reveal" class="hidden">
-    <img src="wheel.png" alt="Wheel">
+    <img src="/app/admin/static/wheel.png" alt="Wheel">
   </div>
 
   <!-- Prize text -->
@@ -175,7 +175,7 @@
 
   <script>
     // Config
-    const DEFAULT_WHEEL_IMAGE = 'wheel.png';
+    const DEFAULT_WHEEL_IMAGE = '/app/admin/static/wheel.png';
     const WS_URL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/overlay/ws';
     let ws = null;
     let currentTimeouts = [];

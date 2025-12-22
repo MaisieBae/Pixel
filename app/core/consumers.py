@@ -14,8 +14,6 @@ from app.core.overlay_bus import OverlayBus
 from app.core.pixel import call_perplexity
 from app.core.sfx import play_sfx
 
-
-
 class QueueWorker:
     """Processes non-TTS jobs. TTS remains consumed by /tts/*.
 
@@ -120,8 +118,7 @@ class QueueWorker:
 
         if kind == 'spin':
             import random
-
-            from app.core.sfx import loop_start, loop_stop  # <-- use helpers
+            from app.core.sfx import loop_start, loop_stop
             from app.core.text import clamp_reply, sanitize_tts_text
             from app.core.wheel import load_prize_lines, load_prizes, load_spin_lines, weighted_choice_index
 
@@ -131,12 +128,13 @@ class QueueWorker:
             prize_obj = prizes[target_idx] if prizes and target_idx < len(prizes) else {}
             prize_name = str(prize_obj.get('name', 'Prize'))
 
+            # Random spin duration (2–10s, still configurable)
             dur = random.randint(
                 max(2, int(self.settings.WHEEL_SPIN_MIN)),
                 max(int(self.settings.WHEEL_SPIN_MIN), int(self.settings.WHEEL_SPIN_MAX)),
             )
 
-            # (1) TTS pre-spin
+            # (0) Pre‑spin TTS (optional) – fire right away, but wheel waits before moving
             spin_lines = load_spin_lines(self.settings)
             if spin_lines and spin_lines[0]:
                 pre = random.choice(spin_lines)
@@ -151,40 +149,51 @@ class QueueWorker:
                 )
                 db.commit()
 
-            # (2) small delay to let pre-roll land
-            await asyncio.sleep(max(0, int(self.settings.WHEEL_PRE_TTS_DELAY_MS)) / 1000.0)
+            # (1) Hard 5s delay before start SFX
+            await asyncio.sleep(15.0)
 
-            # (3) start one-shot + loop (on SFX overlay), then rain visuals
+            # (2) Start one‑shot start SFX
             try:
                 await play_sfx(self.bus, self.settings.WHEEL_SFX_START)
             except Exception:
                 pass
+
+            # (3) 0.5s delay before spin visuals + loop SFX
+            await asyncio.sleep(0.5)
+
+            # (4) Start loop + rain visuals
             try:
                 await loop_start(self.bus, f"/media/sounds/{self.settings.WHEEL_SFX_LOOP}")
             except Exception:
                 pass
+
             try:
-                await self.bus.broadcast({'type': 'wheel', 'action': 'rain-start', 'image': self.settings.WHEEL_IMAGE_URL})
+                await self.bus.broadcast(
+                    {'type': 'wheel', 'action': 'rain-start', 'image': self.settings.WHEEL_IMAGE_URL}
+                )
             except Exception:
                 pass
 
+            # (5) Let the wheel "spin" visually
             await asyncio.sleep(dur)
 
-            # (4) stop rain + loop + win stinger
+            # (6) Stop rain + loop + play win SFX
             try:
                 await self.bus.broadcast({'type': 'wheel', 'action': 'rain-stop'})
             except Exception:
                 pass
+
             try:
                 await loop_stop(self.bus)
             except Exception:
                 pass
+
             try:
                 await play_sfx(self.bus, self.settings.WHEEL_SFX_WIN)
             except Exception:
                 pass
 
-            # (5) reveal animation
+            # (7) Reveal animation on overlay
             try:
                 await self.bus.broadcast(
                     {'type': 'wheel', 'action': 'reveal', 'image': self.settings.WHEEL_IMAGE_URL, 'prize': prize_name}
@@ -192,7 +201,7 @@ class QueueWorker:
             except Exception:
                 pass
 
-            # (5.5) Apply effects (cleanly) via EffectEngine
+            # (7.5) Apply effects (unchanged)
             try:
                 from app.core.effects.types import EffectContext
                 from app.core.effects.engine import EffectEngine, effects_from_prize
@@ -212,7 +221,10 @@ class QueueWorker:
             except Exception as e:
                 print(f"[wheel] effects error: {e}")
 
-            # (6) TTS prize line
+            # (8) Delay prize TTS by 2.5s so SFX & visuals land first
+            await asyncio.sleep(2.5)
+
+            # (9) TTS prize line
             win_lines = load_prize_lines(self.settings)
             if win_lines and win_lines[0]:
                 win = random.choice(win_lines)
@@ -225,8 +237,7 @@ class QueueWorker:
                         payload_json={"user": user, "message": win, "prefix": False, "source": "wheel"},
                     )
                 )
-
-            db.commit()
+                db.commit()
             return
             
         if kind == 'clip':

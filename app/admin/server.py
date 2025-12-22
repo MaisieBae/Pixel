@@ -99,6 +99,10 @@ def create_app(settings: Settings) -> FastAPI:
     sounds_path = Path(settings.SOUNDS_DIR).resolve()
     if sounds_path.exists():
         app.mount("/media/sounds", StaticFiles(directory=str(sounds_path)), name="sounds")
+        
+    admin_static = Path("app/admin/static").resolve()
+    if admin_static.exists():
+        app.mount("/app/admin/static", StaticFiles(directory=str(admin_static)), name="admin-static")
     
     admin = APIRouter(prefix="/admin")
 
