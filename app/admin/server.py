@@ -722,7 +722,6 @@ def create_app(settings: Settings) -> FastAPI:
                 ps.grant(u.id, amount=amount, reason="dropin")
         return
 
-
             # Passive XP for chat
             if is_xp_eligible_chat(text, min_len=1):
                 xs = XpService(db, settings)
@@ -742,30 +741,6 @@ def create_app(settings: Settings) -> FastAPI:
                 )
             )
             db.commit()
-
-    async def _on_follow(user: str) -> None:
-        with SessionLocal() as db:
-            xs = XpService(db, settings)
-            xs.handle_event(XpEvent(type="follow", user=user, metadata={}, source="joystick"))
-        return
-
-    async def _on_sub(user: str, months: int) -> None:
-        with SessionLocal() as db:
-            xs = XpService(db, settings)
-            xs.handle_event(XpEvent(type="sub", user=user, metadata={"months": int(months)}, source="joystick"))
-        return
-
-    async def _on_tip(user: str, tokens: int) -> None:
-        with SessionLocal() as db:
-            xs = XpService(db, settings)
-            xs.handle_event(XpEvent(type="tip", user=user, metadata={"tokens": int(tokens)}, source="joystick"))
-        return
-
-    async def _on_dropin(user: str) -> None:
-        with SessionLocal() as db:
-            xs = XpService(db, settings)
-            xs.handle_event(XpEvent(type="dropin", user=user, metadata={}, source="joystick"))
-        return
 
     # --- Startup tasks ---
     @app.on_event("startup")
