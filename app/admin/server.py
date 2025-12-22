@@ -357,17 +357,41 @@ def create_app(settings: Settings) -> FastAPI:
     @admin.get("/api/settings/points")
     async def api_settings_points_get(request: Request):
         _admin_auth(settings, request)
+        from pathlib import Path
+        
+        # Read directly from .env file to show what will be used after restart
+        env_path = Path(".env")
+        env_settings = {}
+        
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if '=' in line and not line.startswith('#'):
+                    key, val = line.split('=', 1)
+                    env_settings[key.strip()] = val.strip()
+        
+        # Helper to get env value with fallback to current settings
+        def get_setting(key, default, convert=str):
+            val = env_settings.get(key, getattr(settings, key, default))
+            if convert == bool:
+                return str(val).lower() in ('true', '1', 'yes')
+            elif convert == int:
+                return int(val) if val else default
+            elif convert == float:
+                return float(val) if val else default
+            return val
+        
         return JSONResponse({
             "ok": True,
             "settings": {
-                "POINTS_ENABLED": getattr(settings, 'POINTS_ENABLED', True),
-                "POINTS_CHAT_AMOUNT": getattr(settings, 'POINTS_CHAT_AMOUNT', 1),
-                "POINTS_CHAT_COOLDOWN_SECONDS": getattr(settings, 'POINTS_CHAT_COOLDOWN_SECONDS', 60),
-                "POINTS_FOLLOW_AMOUNT": getattr(settings, 'POINTS_FOLLOW_AMOUNT', 50),
-                "POINTS_DROPIN_AMOUNT": getattr(settings, 'POINTS_DROPIN_AMOUNT', 25),
-                "POINTS_SUB_AMOUNT": getattr(settings, 'POINTS_SUB_AMOUNT', 200),
-                "POINTS_TIP_PER_TOKEN": getattr(settings, 'POINTS_TIP_PER_TOKEN', 1.0),
-                "POINTS_TIP_COOLDOWN_SECONDS": getattr(settings, 'POINTS_TIP_COOLDOWN_SECONDS', 30),
+                "POINTS_ENABLED": get_setting('POINTS_ENABLED', True, bool),
+                "POINTS_CHAT_AMOUNT": get_setting('POINTS_CHAT_AMOUNT', 1, int),
+                "POINTS_CHAT_COOLDOWN_SECONDS": get_setting('POINTS_CHAT_COOLDOWN_SECONDS', 60, int),
+                "POINTS_FOLLOW_AMOUNT": get_setting('POINTS_FOLLOW_AMOUNT', 50, int),
+                "POINTS_DROPIN_AMOUNT": get_setting('POINTS_DROPIN_AMOUNT', 25, int),
+                "POINTS_SUB_AMOUNT": get_setting('POINTS_SUB_AMOUNT', 200, int),
+                "POINTS_TIP_PER_TOKEN": get_setting('POINTS_TIP_PER_TOKEN', 1.0, float),
+                "POINTS_TIP_COOLDOWN_SECONDS": get_setting('POINTS_TIP_COOLDOWN_SECONDS', 30, int),
             }
         })
 
