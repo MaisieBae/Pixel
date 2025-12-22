@@ -119,3 +119,11 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Clip requested."}
 
     return {"ok": False, "say": "Unknown command. Try !help"}
+
+    if cmd == "!buzz":
+        # Just queue it like other redeems
+        payload = {"user": user, "action": "click_tip"}
+        result = rs.redeem(user, "remotetip", cooldown_s=None, queue_kind="extension", payload=payload)
+        if not result.get("ok"):
+            return {"ok": False, "say": result.get("error", "Buzzie failed!")}
+    return {"ok": True, "say": "Sending a buzzie..."}

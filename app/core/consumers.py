@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.core.models import QueueItem
 from app.core.overlay_bus import OverlayBus
 from app.core.pixel import call_perplexity
 from app.core.sfx import play_sfx
+
 
 
 class QueueWorker:
@@ -71,6 +73,20 @@ class QueueWorker:
             .limit(1)
         )
         return db.scalar(stmt)
+        
+    async def _handle_extension(self, item: QueueItem) -> None:
+        """Handle extension commands like remote button clicks."""
+        from app.admin.server import _extension_ws  # <-- IMPORT IT INSTEAD
+    
+        payload = item.payload_json or {}
+        action = payload.get("action", "")
+    
+        # Send to all connected extensions
+        for ws in _extension_ws:
+            try:
+                await ws.send_text(json.dumps({"action": action}))
+            except:
+                pass
 
     async def _process_item(self, db: Session, item: QueueItem) -> None:
         kind = (item.kind or '').lower()
@@ -228,6 +244,10 @@ class QueueWorker:
                 )
                 signal_bus.emit(signal)
             return
+            
+        if kind == 'extension':  # <-- ADD THIS BLOCK
+            await self._handle_extension(item)
+            return    
             
         # Ignore other kinds here
         print(f"[worker] ignored kind: {kind}")
