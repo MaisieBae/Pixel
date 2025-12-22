@@ -372,19 +372,22 @@ def create_app(settings: Settings) -> FastAPI:
         })
 
     @admin.post("/api/settings/points")
-    async def api_settings_points_save(
-        request: Request,
-        points_enabled: bool = Form(True),
-        points_chat_amount: int = Form(1),
-        points_chat_cooldown: int = Form(60),
-        points_follow_amount: int = Form(50),
-        points_dropin_amount: int = Form(25),
-        points_sub_amount: int = Form(200),
-        points_tip_per_token: float = Form(1.0),
-        points_tip_cooldown: int = Form(30),
-    ):
+    async def api_settings_points_save(request: Request):
         _admin_auth(settings, request)
         from pathlib import Path
+        
+        # Get form data manually to avoid Form() defaults
+        form_data = await request.form()
+        
+        # Extract values with proper type conversion
+        points_enabled = form_data.get('points_enabled', 'false').lower() in ('true', '1', 'on')
+        points_chat_amount = int(form_data.get('points_chat_amount', 1))
+        points_chat_cooldown = int(form_data.get('points_chat_cooldown', 60))
+        points_follow_amount = int(form_data.get('points_follow_amount', 50))
+        points_dropin_amount = int(form_data.get('points_dropin_amount', 25))
+        points_sub_amount = int(form_data.get('points_sub_amount', 200))
+        points_tip_per_token = float(form_data.get('points_tip_per_token', 1.0))
+        points_tip_cooldown = int(form_data.get('points_tip_cooldown', 30))
         
         env_path = Path(".env")
         lines = []
@@ -421,7 +424,11 @@ def create_app(settings: Settings) -> FastAPI:
         # Write back
         env_path.write_text("\n".join(lines) + "\n")
         
-        return JSONResponse({"ok": True, "message": "Settings saved. Restart bot to apply changes."})
+        return JSONResponse({
+            "ok": True, 
+            "message": "Settings saved. Restart bot to apply changes.",
+            "saved_values": settings_map  # Debug: show what was saved
+        })
 
     # ---------- Redeems CRUD ----------
     @admin.post("/api/redeems/upsert")
