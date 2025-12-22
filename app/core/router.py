@@ -55,7 +55,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         active_tts = len(list(db.scalars(
             select(QueueItem).where(
                 QueueItem.kind == 'tts',
-                QueueItem.status.in_(['pending', 'running'])
+                QueueItem.status.in_(['pending'])
             )
         )))
         if active_tts >= max(1, settings.TTS_QUEUE_MAX):

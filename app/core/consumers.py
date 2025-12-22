@@ -178,7 +178,8 @@ class QueueWorker:
 
             # (5.5) Apply effects (cleanly) via EffectEngine
             try:
-                from app.core.effects import EffectContext, EffectEngine, effects_from_prize
+                from app.core.effects.types import EffectContext
+                from app.core.effects.engine import EffectEngine, effects_from_prize
 
                 effects = effects_from_prize(prize_obj)
                 engine = EffectEngine(db=db, settings=self.settings, bus=self.bus)
