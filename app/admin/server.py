@@ -85,8 +85,17 @@ def create_app(settings: Settings) -> FastAPI:
 
     _bus = OverlayBus()
 
-    from fastapi.staticfiles import StaticFiles  # Line 1
-    app.mount("/overlay", StaticFiles(directory=str(Path(__file__).parent / "overlay")), name="overlay")  # Line 2
+    from fastapi.responses import FileResponse
+    from fastapi import Request
+
+    @app.get("/overlay/wheel.html")
+    async def wheel_overlay():
+    return FileResponse("app/admin/overlay/wheel.html")
+
+    @app.get("/overlay/sfx.html") 
+    async def sfx_overlay():
+    return FileResponse("app/admin/overlay/sfx.html")
+
     admin = APIRouter(prefix="/admin")
 
     @admin.get("", response_class=HTMLResponse)
