@@ -98,7 +98,7 @@ def create_app(settings: Settings) -> FastAPI:
         
     sounds_path = Path(settings.SOUNDS_DIR).resolve()
     if sounds_path.exists():
-    app.mount("/media/sounds", StaticFiles(directory=str(sounds_path)), name="sounds")
+        app.mount("/media/sounds", StaticFiles(directory=str(sounds_path)), name="sounds")
     
     admin = APIRouter(prefix="/admin")
 
@@ -679,6 +679,8 @@ def create_app(settings: Settings) -> FastAPI:
 
     async def _on_chat(user: str, text: str, say: str | None = None) -> None:
         assert _bus is not None
+        if user.lower() == settings.BOT_USERNAME.lower():
+            return    
         with SessionLocal() as db:
             # enqueue say (system tts) if provided
             if say:

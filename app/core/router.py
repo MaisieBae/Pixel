@@ -68,7 +68,7 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         result = rs.redeem(user, "tts", cooldown_s=None, queue_kind="tts", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "TTS failed")}
-        return {"ok": True, "say": "Queued TTS."}
+        return {"ok": True, "say": "TTS sent!"}
 
     if cmd == "!pixel":
         if not args:

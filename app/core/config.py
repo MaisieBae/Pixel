@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    BOT_USERNAME: str = "pixel"  # or whatever your bot's username is
     # Server
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8080
