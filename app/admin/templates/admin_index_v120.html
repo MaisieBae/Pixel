@@ -759,19 +759,33 @@ document.getElementById('xp_audit_load').addEventListener('click', async () => {
     e.preventDefault();
     status.textContent = 'Saving...';
 
-    const formData = new FormData(form);
+    // Build FormData manually to handle checkbox correctly
+    const formData = new FormData();
+    formData.append('points_enabled', document.getElementById('points_enabled').checked);
+    formData.append('points_chat_amount', document.getElementById('points_chat_amount').value);
+    formData.append('points_chat_cooldown', document.getElementById('points_chat_cooldown').value);
+    formData.append('points_follow_amount', document.getElementById('points_follow_amount').value);
+    formData.append('points_dropin_amount', document.getElementById('points_dropin_amount').value);
+    formData.append('points_sub_amount', document.getElementById('points_sub_amount').value);
+    formData.append('points_tip_per_token', document.getElementById('points_tip_per_token').value);
+    formData.append('points_tip_cooldown', document.getElementById('points_tip_cooldown').value);
+
     try {
       const r = await fetch('/admin/api/settings/points', { method: 'POST', body: formData });
       const data = await r.json();
       
       if (data.ok) {
         status.textContent = '✅ Settings saved! Restart bot to apply.';
+        status.style.color = 'var(--success)';
+        setTimeout(() => { status.textContent = ''; }, 3000);
         await loadSettings();
       } else {
         status.textContent = '❌ Error: ' + (data.error || 'Failed to save');
+        status.style.color = 'var(--danger)';
       }
     } catch (err) {
       status.textContent = '❌ Error saving settings';
+      status.style.color = 'var(--danger)';
     }
   });
 
