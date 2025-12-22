@@ -51,8 +51,14 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
     if cmd == "!tts":
         if not args:
             return {"ok": False, "say": "Usage: !tts <message>"}
-        pending = len(list(db.scalars(select(QueueItem).where(QueueItem.kind=='tts', QueueItem.status=='pending'))))
-        if pending >= max(1, settings.TTS_QUEUE_MAX):
+        # FIX: Count both 'pending' AND 'running' items to prevent stuck items from blocking queue
+        active_tts = len(list(db.scalars(
+            select(QueueItem).where(
+                QueueItem.kind == 'tts',
+                QueueItem.status.in_(['pending', 'running'])
+            )
+        )))
+        if active_tts >= max(1, settings.TTS_QUEUE_MAX):
             return {"ok": False, "say": "TTS queue is full, try again shortly."}
         payload = {
             "user": user,
