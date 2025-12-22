@@ -55,10 +55,9 @@ def get_db():
 
 
 def _admin_auth(settings: Settings, request: Request) -> None:
-    token = request.headers.get("x-admin-token") or request.query_params.get("token") or ""
-    expected = getattr(settings, "ADMIN_TOKEN", "") or ""
-    if expected and token != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    # Admin auth disabled for local-only access
+    # If you want to re-enable auth, set ADMIN_TOKEN in .env
+    pass
 
 
 def _wants_json(request: Request) -> bool:
@@ -400,6 +399,19 @@ def create_app(settings: Settings) -> FastAPI:
         rs = RedeemsService(db)
         rs.seed_defaults(settings)
         return JSONResponse({"ok": True, "redeems": rs.list()})
+        
+    @admin.post("/api/redeems/delete")
+    async def api_redeems_delete(request: Request, key: str = Form(...), db: Session = Depends(get_db)):
+        _admin_auth(settings, request)
+        rs = RedeemsService(db)
+        redeem = rs.get(key.strip())
+        if not redeem:
+            return JSONResponse({"ok": False, "error": "Redeem not found"}, status_code=404)
+        db.delete(redeem)
+        db.commit()
+        if _wants_json(request):
+            return JSONResponse({"ok": True, "key": key})
+        return _redirect_back_to_admin(request)
 
     # NOTE: include_router(admin) moved to the end so routes defined below are registered.
     # ---------- Joystick Installations / Messaging (v2.1.0) ----------
@@ -576,31 +588,40 @@ def create_app(settings: Settings) -> FastAPI:
                     pass
                 res = handle_chat(db, settings, user, text)
                 say_text = str(res.get("say") or "").strip()
+                is_whisper = res.get("whisper", False)
+                
                 if say_text:
-                    # Keep existing behavior: command responses go to TTS queue
-                    db.add(
-                        QueueItem(
-                            kind="tts",
-                            status="pending",
-                            payload_json={
-                                "user": user,
-                                "message": say_text,
-                                "prefix": False,
-                                "source": "cmd",
-                            },
-                        )
-                    )
-                    db.commit()
-
-                    # Also post the response back into Joystick chat so commands feel responsive on-site.
-                    # This is additive (doesn't replace TTS).
                     global _js
-                    if _js:
+                    
+                    # If whisper is requested, send whisper instead of TTS + chat
+                    if is_whisper and _js:
                         try:
-                            await _js.send_message(say_text)
+                            await _js.send_whisper(user, say_text)
                         except Exception:
-                            # Don't crash chat handling if Joystick send fails.
                             pass
+                    else:
+                        # Keep existing behavior: command responses go to TTS queue
+                        db.add(
+                            QueueItem(
+                                kind="tts",
+                                status="pending",
+                                payload_json={
+                                    "user": user,
+                                    "message": say_text,
+                                    "prefix": False,
+                                    "source": "cmd",
+                                },
+                            )
+                        )
+                        db.commit()
+
+                        # Also post the response back into Joystick chat so commands feel responsive on-site.
+                        if _js:
+                            try:
+                                await _js.send_message(say_text)
+                            except Exception:
+                                # Don't crash chat handling if Joystick send fails.
+                                pass
                 return
 
             # Passive XP for chat

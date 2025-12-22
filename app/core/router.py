@@ -11,7 +11,7 @@ from app.core.xp import XpService
 
 
 HELP_TEXT = (
-    "Commands: !tts <msg>, !pixel <msg>, !sound <name>, !listsounds [page], !spin, !xp, !level, !clip"
+    "Commands: !points, !tts <msg>, !pixel <msg>, !sound <name>, !listsounds [page], !spin, !xp, !level, !clip"
 )
 
 
@@ -103,6 +103,13 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
     if cmd == "!listsounds":
         # existing behavior unchanged
         return {"ok": True, "say": "See /static/sfx for available sounds."}
+
+    if cmd == "!points" or cmd == "!balance":
+        ps = PointsService(db)
+        u = ps.ensure_user(user)
+        balance = ps.get_balance(u.id)
+        # Return whisper=True so the handler knows to whisper
+        return {"ok": True, "say": f"@{u.name} has {balance} points.", "whisper": True}
 
     if cmd == "!clip":
         payload = {"user": user}
