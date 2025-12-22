@@ -1,5 +1,5 @@
 // Listen for connections from your bot
-const WS_URL = 'ws://your-bot-ip:8080/extension/ws';
+const WS_URL = 'ws://192.168.1.127:8080/extension/ws';
 let ws = null;
 
 function connect() {

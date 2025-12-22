@@ -45,7 +45,7 @@ _worker: QueueWorker | None = None
 _bg_tasks: list[asyncio.Task] = []
 _signal_bus = None  # NEW: Signal bus for OBS/VRChat
 _obs_handler = None  # NEW: OBS handler
-
+_extension_ws: list[WebSocket] = []  # <-- chrome extension
 
 def get_db():
     db = SessionLocal()
@@ -644,7 +644,7 @@ def create_app(settings: Settings) -> FastAPI:
         await _js.send_whisper(username, text, channel_id=(channel_id or None))
         return JSONResponse({"ok": True})
 
-
+   
     # ---------- Overlay websocket ----------
     @app.websocket("/overlay/ws")
     async def ws_overlay(websocket: WebSocket):
@@ -655,6 +655,21 @@ def create_app(settings: Settings) -> FastAPI:
                 await websocket.receive_text()
         except WebSocketDisconnect:
             await _bus.disconnect(websocket)
+
+    # ---------- Extension websocket ----------
+    @app.websocket("/extension/ws")
+    async def ws_extension(websocket: WebSocket):
+        global _extension_ws
+        await websocket.accept()
+        _extension_ws.append(websocket)
+        print("[Extension] Chrome extension connected")
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            if websocket in _extension_ws:
+                _extension_ws.remove(websocket)
+            print("[Extension] Chrome extension disconnected")
 
     # ---------- TTS endpoints ----------
     @app.get("/tts/plain-next", response_class=PlainTextResponse)
