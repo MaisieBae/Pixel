@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pixel SFX Player</title>
+    <meta charset="utf-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: transparent; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif; 
+            height: 100vh; width: 100vw;
+        }
+        #sfx-container { 
+            position: relative; width: 100%; height: 100%; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .sfx-burst { 
+            position: absolute; width: 100px; height: 100px; 
+            background: radial-gradient(circle, #00ff88, #00cc66);
+            border-radius: 50%; opacity: 0;
+            animation: burst 0.6s ease-out forwards;
+        }
+        @keyframes burst {
+            0% { transform: scale(0); opacity: 1; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+        #sound-name { 
+            font-size: 36px; font-weight: bold; 
+            color: #00ff88; text-shadow: 2px 2px 4px #000;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        #sound-name.show { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="sfx-container">
+        <div id="sound-name"></div>
+    </div>
+
+    <script>
+        const ws = new WebSocket('ws://' + location.host + '/ws/overlay');
+        const sfxContainer = document.getElementById('sfx-container');
+        const soundName = document.getElementById('sound-name');
+        
+        function createBurst(x, y) {
+            const burst = document.createElement('div');
+            burst.className = 'sfx-burst';
+            burst.style.left = x + 'px';
+            burst.style.top = y + 'px';
+            sfxContainer.appendChild(burst);
+            setTimeout(() => burst.remove(), 600);
+        }
+        
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            
+            if (msg.type === 'sfx') {
+                // Multiple burst effects
+                for (let i = 0; i < 8; i++) {
+                    setTimeout(() => {
+                        createBurst(
+                            Math.random() * window.innerWidth,
+                            Math.random() * window.innerHeight
+                        );
+                    }, i * 50);
+                }
+            }
+            
+            if (msg.sound) {
+                soundName.textContent = msg.sound.toUpperCase();
+                soundName.classList.add('show');
+                setTimeout(() => soundName.classList.remove('show'), 1500);
+            }
+        };
+    </script>
+</body>
+</html>
