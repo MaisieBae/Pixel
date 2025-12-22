@@ -28,6 +28,7 @@ DEFAULT_REDEEMS: list[RedeemDefault] = [
     RedeemDefault("pixel", "Pixel Reply", 50, True, 20),
     RedeemDefault("sound", "Play Sound", 15, True, 5),
     RedeemDefault("spin", "Prize Wheel Spin", 100, True, 0),
+    RedeemDefault("clip", "Save Clip", 50, True, 30),
 ]
 
 

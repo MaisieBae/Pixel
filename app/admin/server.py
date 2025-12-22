@@ -42,6 +42,8 @@ _bus: OverlayBus | None = None
 _js: JoystickClient | None = None
 _worker: QueueWorker | None = None
 _bg_tasks: list[asyncio.Task] = []
+_signal_bus = None  # NEW: Signal bus for OBS/VRChat
+_obs_handler = None  # NEW: OBS handler
 
 
 def get_db():
@@ -648,8 +650,28 @@ def create_app(settings: Settings) -> FastAPI:
     # --- Startup tasks ---
     @app.on_event("startup")
     async def _on_startup():
-        global _js, _worker, _bg_tasks
+        global _js, _worker, _bg_tasks, _signal_bus, _obs_handler
         assert _bus is not None
+
+        # Initialize signal bus for OBS/VRChat integrations
+        from app.core.signals.bus import SignalBus
+        from app.core.signals.obs import OBSHandler
+        
+        _signal_bus = SignalBus()
+        
+        # Initialize OBS handler if enabled
+        if getattr(settings, 'OBS_WS_ENABLED', False):
+            try:
+                _obs_handler = OBSHandler(
+                    host=getattr(settings, 'OBS_WS_HOST', 'localhost'),
+                    port=int(getattr(settings, 'OBS_WS_PORT', 4455)),
+                    password=getattr(settings, 'OBS_WS_PASSWORD', '')
+                )
+                await _obs_handler.connect()
+                _signal_bus.register(_obs_handler)
+                print("[startup] OBS handler registered")
+            except Exception as e:
+                print(f"[startup] OBS handler failed to initialize: {e}")
 
         _js = JoystickClient(settings.JOYSTICK_BASIC_KEY, default_channel_id=settings.JOYSTICK_DEFAULT_CHANNEL_ID)
         _js.set_callbacks(
@@ -664,6 +686,9 @@ def create_app(settings: Settings) -> FastAPI:
         await _js.start()
 
         _worker = QueueWorker(_bus, settings)
+        # Attach signal bus to worker so it can emit signals
+        if _signal_bus:
+            _worker._signal_bus = _signal_bus
         _bg_tasks.append(asyncio.create_task(_worker.start()))
 
     @app.on_event("shutdown")

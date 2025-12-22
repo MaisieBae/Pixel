@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     VRC_OSC_HOST: str = "127.0.0.1"
     VRC_OSC_PORT: int = 9000
 
+    # OBS WebSocket (for clips)
+    OBS_WS_ENABLED: bool = True
+    OBS_WS_HOST: str = "localhost"
+    OBS_WS_PORT: int = 4455
+    OBS_WS_PASSWORD: str = ""
+
     # XP / Leveling (v2.0.0)
     XP_ENABLED: bool = True
     XP_BASE: int = 100

@@ -211,6 +211,22 @@ class QueueWorker:
 
             db.commit()
             return
-
+            
+        if kind == 'clip':
+            from app.core.signals.base import Signal
+            from app.core.signals.bus import SignalBus
+            
+            # Get global signal bus if it exists
+            signal_bus = getattr(self, '_signal_bus', None)
+            if signal_bus:
+                signal = Signal(
+                    name="clip.requested",
+                    user=payload.get('user', ''),
+                    source="queue",
+                    payload=payload
+                )
+                signal_bus.emit(signal)
+            return
+            
         # Ignore other kinds here
         print(f"[worker] ignored kind: {kind}")
