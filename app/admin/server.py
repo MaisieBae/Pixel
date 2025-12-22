@@ -628,6 +628,105 @@ def create_app(settings: Settings) -> FastAPI:
             if is_xp_eligible_chat(text, min_len=1):
                 xs = XpService(db, settings)
                 xs.handle_event(XpEvent(type="chat", user=user, metadata={"text": text}, source="joystick"))
+            
+            # NEW: Passive POINTS for chat
+            if getattr(settings, 'POINTS_ENABLED', True) and is_xp_eligible_chat(text, min_len=1):
+                from app.core.cooldowns import CooldownService
+                ps = PointsService(db)
+                cs = CooldownService(db)
+                u = ps.ensure_user(user)
+                
+                cooldown_s = getattr(settings, 'POINTS_CHAT_COOLDOWN_SECONDS', 60)
+                active, _ = cs.is_active(u.id, 'points_chat')
+                if not active:
+                    amount = getattr(settings, 'POINTS_CHAT_AMOUNT', 1)
+                    ps.grant(u.id, amount=amount, reason="chat")
+                    cs.set(u.id, 'points_chat', cooldown_s)
+
+            p = float(getattr(settings, "PPLX_RANDOM_REPLY_PROB", 0.0) or 0.0)
+            if p <= 0:
+                return
+            if random.random() >= p:
+                return
+
+            db.add(
+                QueueItem(
+                    kind="pixel",
+                    status="pending",
+                    payload_json={"user": user, "message": text, "source": "random"},
+                )
+            )
+            db.commit()
+
+    async def _on_follow(user: str) -> None:
+        with SessionLocal() as db:
+            # Award XP
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="follow", user=user, metadata={}, source="joystick"))
+            
+            # NEW: Award POINTS
+            if getattr(settings, 'POINTS_ENABLED', True):
+                ps = PointsService(db)
+                u = ps.ensure_user(user)
+                amount = getattr(settings, 'POINTS_FOLLOW_AMOUNT', 50)
+                ps.grant(u.id, amount=amount, reason="follow")
+        return
+
+    async def _on_sub(user: str, months: int) -> None:
+        with SessionLocal() as db:
+            # Award XP
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="sub", user=user, metadata={"months": int(months)}, source="joystick"))
+            
+            # NEW: Award POINTS
+            if getattr(settings, 'POINTS_ENABLED', True):
+                ps = PointsService(db)
+                u = ps.ensure_user(user)
+                amount = getattr(settings, 'POINTS_SUB_AMOUNT', 200)
+                ps.grant(u.id, amount=amount, reason="subscription")
+        return
+
+    async def _on_tip(user: str, tokens: int) -> None:
+        with SessionLocal() as db:
+            # Award XP
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="tip", user=user, metadata={"tokens": int(tokens)}, source="joystick"))
+            
+            # NEW: Award POINTS (with cooldown)
+            if getattr(settings, 'POINTS_ENABLED', True):
+                from app.core.cooldowns import CooldownService
+                ps = PointsService(db)
+                cs = CooldownService(db)
+                u = ps.ensure_user(user)
+                
+                cooldown_s = getattr(settings, 'POINTS_TIP_COOLDOWN_SECONDS', 30)
+                active, _ = cs.is_active(u.id, 'points_tip')
+                if not active:
+                    rate = getattr(settings, 'POINTS_TIP_PER_TOKEN', 1.0)
+                    amount = int(tokens * rate)
+                    ps.grant(u.id, amount=amount, reason=f"tip:{tokens}tokens")
+                    cs.set(u.id, 'points_tip', cooldown_s)
+        return
+
+    async def _on_dropin(user: str) -> None:
+        with SessionLocal() as db:
+            # Award XP
+            xs = XpService(db, settings)
+            xs.handle_event(XpEvent(type="dropin", user=user, metadata={}, source="joystick"))
+            
+            # NEW: Award POINTS
+            if getattr(settings, 'POINTS_ENABLED', True):
+                ps = PointsService(db)
+                u = ps.ensure_user(user)
+                amount = getattr(settings, 'POINTS_DROPIN_AMOUNT', 25)
+                ps.grant(u.id, amount=amount, reason="dropin")
+        return
+
+
+            # Passive XP for chat
+            if is_xp_eligible_chat(text, min_len=1):
+                xs = XpService(db, settings)
+                xs.handle_event(XpEvent(type="chat", user=user, metadata={"text": text}, source="joystick"))
 
             p = float(getattr(settings, "PPLX_RANDOM_REPLY_PROB", 0.0) or 0.0)
             if p <= 0:

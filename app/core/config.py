@@ -97,6 +97,18 @@ class Settings(BaseSettings):
 
     # Optional level-up rewards
     XP_LEVEL_REWARDS_FILE: str = "./data/level_rewards.json"
+    
+    # ========== ADD THIS SECTION ==========
+    # Points / Currency System
+    POINTS_ENABLED: bool = True
+    POINTS_CHAT_AMOUNT: int = 1
+    POINTS_CHAT_COOLDOWN_SECONDS: int = 60
+    POINTS_FOLLOW_AMOUNT: int = 50
+    POINTS_DROPIN_AMOUNT: int = 25
+    POINTS_SUB_AMOUNT: int = 200
+    POINTS_TIP_PER_TOKEN: float = 1.0
+    POINTS_TIP_COOLDOWN_SECONDS: int = 30
+    # ======================================
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
