@@ -352,6 +352,76 @@ def create_app(settings: Settings) -> FastAPI:
                 ],
             }
         )
+        
+    # ---------- Settings Management (v2.1.0) ----------
+    @admin.get("/api/settings/points")
+    async def api_settings_points_get(request: Request):
+        _admin_auth(settings, request)
+        return JSONResponse({
+            "ok": True,
+            "settings": {
+                "POINTS_ENABLED": getattr(settings, 'POINTS_ENABLED', True),
+                "POINTS_CHAT_AMOUNT": getattr(settings, 'POINTS_CHAT_AMOUNT', 1),
+                "POINTS_CHAT_COOLDOWN_SECONDS": getattr(settings, 'POINTS_CHAT_COOLDOWN_SECONDS', 60),
+                "POINTS_FOLLOW_AMOUNT": getattr(settings, 'POINTS_FOLLOW_AMOUNT', 50),
+                "POINTS_DROPIN_AMOUNT": getattr(settings, 'POINTS_DROPIN_AMOUNT', 25),
+                "POINTS_SUB_AMOUNT": getattr(settings, 'POINTS_SUB_AMOUNT', 200),
+                "POINTS_TIP_PER_TOKEN": getattr(settings, 'POINTS_TIP_PER_TOKEN', 1.0),
+                "POINTS_TIP_COOLDOWN_SECONDS": getattr(settings, 'POINTS_TIP_COOLDOWN_SECONDS', 30),
+            }
+        })
+
+    @admin.post("/api/settings/points")
+    async def api_settings_points_save(
+        request: Request,
+        points_enabled: bool = Form(True),
+        points_chat_amount: int = Form(1),
+        points_chat_cooldown: int = Form(60),
+        points_follow_amount: int = Form(50),
+        points_dropin_amount: int = Form(25),
+        points_sub_amount: int = Form(200),
+        points_tip_per_token: float = Form(1.0),
+        points_tip_cooldown: int = Form(30),
+    ):
+        _admin_auth(settings, request)
+        from pathlib import Path
+        
+        env_path = Path(".env")
+        lines = []
+        
+        # Read existing .env
+        if env_path.exists():
+            lines = env_path.read_text().splitlines()
+        
+        # Update or add settings
+        settings_map = {
+            "POINTS_ENABLED": str(points_enabled),
+            "POINTS_CHAT_AMOUNT": str(points_chat_amount),
+            "POINTS_CHAT_COOLDOWN_SECONDS": str(points_chat_cooldown),
+            "POINTS_FOLLOW_AMOUNT": str(points_follow_amount),
+            "POINTS_DROPIN_AMOUNT": str(points_dropin_amount),
+            "POINTS_SUB_AMOUNT": str(points_sub_amount),
+            "POINTS_TIP_PER_TOKEN": str(points_tip_per_token),
+            "POINTS_TIP_COOLDOWN_SECONDS": str(points_tip_cooldown),
+        }
+        
+        # Update existing or append new
+        updated_keys = set()
+        for i, line in enumerate(lines):
+            for key, val in settings_map.items():
+                if line.startswith(f"{key}="):
+                    lines[i] = f"{key}={val}"
+                    updated_keys.add(key)
+        
+        # Append new keys
+        for key, val in settings_map.items():
+            if key not in updated_keys:
+                lines.append(f"{key}={val}")
+        
+        # Write back
+        env_path.write_text("\n".join(lines) + "\n")
+        
+        return JSONResponse({"ok": True, "message": "Settings saved. Restart bot to apply changes."})
 
     # ---------- Redeems CRUD ----------
     @admin.post("/api/redeems/upsert")
