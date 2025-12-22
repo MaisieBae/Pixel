@@ -722,26 +722,6 @@ def create_app(settings: Settings) -> FastAPI:
                 ps.grant(u.id, amount=amount, reason="dropin")
         return
 
-            # Passive XP for chat
-            if is_xp_eligible_chat(text, min_len=1):
-                xs = XpService(db, settings)
-                xs.handle_event(XpEvent(type="chat", user=user, metadata={"text": text}, source="joystick"))
-
-            p = float(getattr(settings, "PPLX_RANDOM_REPLY_PROB", 0.0) or 0.0)
-            if p <= 0:
-                return
-            if random.random() >= p:
-                return
-
-            db.add(
-                QueueItem(
-                    kind="pixel",
-                    status="pending",
-                    payload_json={"user": user, "message": text, "source": "random"},
-                )
-            )
-            db.commit()
-
     # --- Startup tasks ---
     @app.on_event("startup")
     async def _on_startup():
