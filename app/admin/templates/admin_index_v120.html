@@ -2,471 +2,613 @@
 {% block content %}
 
 <style>
-  .card { background: #111827; border: 1px solid #1f2937; padding: 16px; border-radius: 12px; margin-bottom: 16px; }
-  .muted { color: #9ca3af; }
-  .table { width: 100%; border-collapse: collapse; }
-  .table th, .table td { border-bottom: 1px solid #1f2937; padding: 8px; text-align: left; vertical-align: top; }
-  input, select, textarea { background: #0b1220; border: 1px solid #243047; color: #e5e7eb; padding: 6px 8px; border-radius: 8px; }
-  button { background: #2563eb; border: none; color: white; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-  button:hover { filter: brightness(1.05); }
+  :root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-card: #1e293b;
+    --border: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg-primary); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  
+  /* Layout */
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+  .header h1 { margin: 0; font-size: 28px; }
+  
+  /* Tabs */
+  .tabs { display: flex; gap: 8px; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+  .tab { padding: 12px 24px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 15px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  
+  /* Cards */
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .card h2 { margin: 0 0 8px 0; font-size: 18px; font-weight: 600; }
+  .card p { margin: 0 0 16px 0; color: var(--text-secondary); font-size: 14px; }
+  
+  /* Grid */
+  .grid { display: grid; gap: 20px; }
+  .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  
+  /* Stats */
+  .stat-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+  .stat-value { font-size: 32px; font-weight: 700; color: var(--text-primary); }
+  
+  /* Forms */
+  .form-group { margin-bottom: 16px; }
+  .form-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+  .form-inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .form-inline .form-group { margin-bottom: 0; flex: 1; min-width: 150px; }
+  
+  input, select, textarea { 
+    width: 100%; 
+    background: var(--bg-primary); 
+    border: 1px solid var(--border); 
+    color: var(--text-primary); 
+    padding: 10px 12px; 
+    border-radius: 8px; 
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  input[type="checkbox"] { width: auto; }
+  
+  /* Buttons */
+  .btn { 
+    padding: 10px 16px; 
+    border: none; 
+    border-radius: 8px; 
+    font-size: 14px; 
+    font-weight: 500; 
+    cursor: pointer; 
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { filter: brightness(1.1); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { filter: brightness(1.1); }
+  .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  
+  /* Tables */
+  .table-container { overflow-x: auto; }
+  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .table th { 
+    text-align: left; 
+    padding: 12px; 
+    background: var(--bg-primary); 
+    color: var(--text-secondary); 
+    font-weight: 600; 
+    font-size: 13px; 
+    text-transform: uppercase; 
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid var(--border);
+  }
+  .table td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .table tr:hover { background: var(--bg-primary); }
+  
+  /* Badges */
+  .badge { 
+    display: inline-block; 
+    padding: 4px 8px; 
+    border-radius: 6px; 
+    font-size: 12px; 
+    font-weight: 600; 
+  }
+  .badge-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+  .badge-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+  .badge-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+  
+  /* Status */
+  .status { color: var(--text-muted); font-size: 13px; margin-left: 8px; }
+  
+  /* Utilities */
+  .muted { color: var(--text-muted); }
+  .text-sm { font-size: 13px; }
+  .mt-2 { margin-top: 16px; }
+  .mb-0 { margin-bottom: 0; }
+  code { background: var(--bg-primary); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--accent); }
 </style>
 
-<section class="card">
-  <h2>Quick Spin Tester</h2>
-  <form id="quickspin" method="post" action="/admin/api/spin/quick" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-    <input name="user" placeholder="user" value="Tester" />
-    <button type="submit">Queue spin</button>
-    <span id="quickspin-result" class="muted"></span>
-  </form>
-</section>
-
-<section class="card">
-  <h2>TTS Lines Editor</h2>
-  <p class="muted">Edits apply immediately for future spins/prizes. Backups are stored in <code>./data/backups</code>.</p>
-
-  <form id="tts-lines-form" method="post" action="/admin/api/tts-lines/save" style="display:flex; gap:16px; flex-wrap:wrap;">
-    <div style="flex:1; min-width:340px;">
-      <h3>Spin Lines</h3>
-      <textarea id="spin_lines" name="spin_lines" rows="12" style="width:100%;"></textarea>
-      <div id="spin_backups" class="muted" style="margin-top:6px;"></div>
-    </div>
-
-    <div style="flex:1; min-width:340px;">
-      <h3>Prize Lines</h3>
-      <textarea id="prize_lines" name="prize_lines" rows="12" style="width:100%;"></textarea>
-      <div id="prize_backups" class="muted" style="margin-top:6px;"></div>
-    </div>
-
-    <div style="flex-basis:100%; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <button type="submit">Save</button>
-      <span id="tts-save-result" class="muted"></span>
-    </div>
-  </form>
-
-  <div style="margin-top:10px; display:flex; gap:20px; flex-wrap:wrap;">
-    <form id="restore_spin" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:10px; align-items:center;">
-      <input type="hidden" name="which" value="spin"/>
-      <input name="backup_name" placeholder="spin_lines_YYYYMMDD_HHMMSS.txt" style="min-width:280px;" />
-      <button type="submit">Restore Spin</button>
-      <span class="muted" id="restore_spin_result"></span>
-    </form>
-
-    <form id="restore_prize" method="post" action="/admin/api/tts-lines/restore" style="display:flex; gap:10px; align-items:center;">
-      <input type="hidden" name="which" value="prize"/>
-      <input name="backup_name" placeholder="prize_lines_YYYYMMDD_HHMMSS.txt" style="min-width:280px;" />
-      <button type="submit">Restore Prize</button>
-      <span class="muted" id="restore_prize_result"></span>
-    </form>
+<div class="container">
+  <div class="header">
+    <h1>🎮 Pixel Bot Admin</h1>
+    <div class="muted">v2.1.0</div>
   </div>
-</section>
 
-<section class="card">
-  <h2>Users & Points</h2>
+  <!-- Stats Dashboard -->
+  <div class="grid grid-4" style="margin-bottom: 30px;">
+    <div class="stat-box">
+      <div class="stat-label">Total Users</div>
+      <div class="stat-value">{{ users|length }}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Redeems</div>
+      <div class="stat-value">{{ redeems|length }}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Items</div>
+      <div class="stat-value">{{ items|length }}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Status</div>
+      <div class="stat-value" style="font-size: 20px; color: var(--success);">● Online</div>
+    </div>
+  </div>
 
-  <div style="display:flex; gap:20px; flex-wrap:wrap;">
-    <div style="flex:1; min-width:320px;">
-      <h3>Create User</h3>
-      <form method="post" action="/admin/api/users/create" style="display:flex; gap:8px; align-items:center;">
-        <input name="name" placeholder="username" required />
-        <button type="submit">Create</button>
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <button class="tab active" data-tab="redeems">🎯 Redeems</button>
+    <button class="tab" data-tab="users">👥 Users & Points</button>
+    <button class="tab" data-tab="tts">🎙️ TTS Lines</button>
+    <button class="tab" data-tab="tools">🛠️ Tools</button>
+    <button class="tab" data-tab="audit">📊 Audit Logs</button>
+  </div>
+
+  <!-- Tab: Redeems -->
+  <div class="tab-content active" id="tab-redeems">
+    <div class="grid grid-2">
+      <!-- Add/Edit Redeem -->
+      <div class="card">
+        <h2>Add / Edit Redeem</h2>
+        <p>Create new redeems or update existing ones by using the same key.</p>
+        <form method="post" action="/admin/api/redeems/upsert" id="redeem-form">
+          <div class="form-group">
+            <label class="form-label">Key *</label>
+            <input name="key" id="redeem-key" placeholder="e.g., tts, pixel, sound" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Display Name *</label>
+            <input name="display_name" id="redeem-display" placeholder="e.g., Text-to-Speech" required />
+          </div>
+          <div class="form-inline">
+            <div class="form-group">
+              <label class="form-label">Cost (Points) *</label>
+              <input name="cost" id="redeem-cost" type="number" step="1" min="0" placeholder="25" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Cooldown (Seconds)</label>
+              <input name="cooldown_s" id="redeem-cooldown" type="number" step="1" min="0" placeholder="10" value="0" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" name="enabled" id="redeem-enabled" value="1" checked />
+              <span>Enabled</span>
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary">💾 Save Redeem</button>
+          <button type="button" class="btn btn-secondary" id="clear-redeem-form">Clear</button>
+          <span class="status" id="redeem-status"></span>
+        </form>
+      </div>
+
+      <!-- Registered Redeems -->
+      <div class="card">
+        <h2>Registered Redeems</h2>
+        <p>Click a redeem to edit, or delete ones you don't need.</p>
+        {% if redeems %}
+        <div class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Cost</th>
+                <th>Cooldown</th>
+                <th>Status</th>
+                <th style="width: 180px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in redeems %}
+              <tr>
+                <td>
+                  <strong>{{ r.display_name }}</strong><br>
+                  <code class="muted">{{ r.key }}</code>
+                </td>
+                <td>{{ r.cost }} pts</td>
+                <td>{{ r.cooldown_s if r.cooldown_s is defined else 0 }}s</td>
+                <td>
+                  {% if r.enabled %}
+                    <span class="badge badge-success">Active</span>
+                  {% else %}
+                    <span class="badge badge-danger">Disabled</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-primary edit-redeem" 
+                    data-key="{{ r.key }}"
+                    data-display="{{ r.display_name }}"
+                    data-cost="{{ r.cost }}"
+                    data-cooldown="{{ r.cooldown_s if r.cooldown_s is defined else 0 }}"
+                    data-enabled="{{ 1 if r.enabled else 0 }}">
+                    ✏️ Edit
+                  </button>
+                  <form method="post" action="/admin/api/redeems/delete" style="display:inline-block" class="delete-redeem-form">
+                    <input type="hidden" name="key" value="{{ r.key }}" />
+                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ r.key }}?')">
+                      🗑️ Delete
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+          <p class="muted">No redeems configured yet. Create one using the form.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Users & Points -->
+  <div class="tab-content" id="tab-users">
+    <div class="card">
+      <h2>Create New User</h2>
+      <form method="post" action="/admin/api/users/create" class="form-inline">
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input name="name" placeholder="Enter username" required />
+        </div>
+        <button type="submit" class="btn btn-success">➕ Create User</button>
       </form>
     </div>
-  </div>
 
-  <div style="margin-top:12px;">
-    {% if users %}
-      <table class="table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Last Seen</th>
-            <th>XP</th>
-            <th>Grant Points</th>
-            <th>Adjust Points</th>
-            <th>Adjust XP</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for u in users %}
-          <tr>
-            <td><b>{{ u.name }}</b> (#{{ u.id }})</td>
-            <td><code>{{ u.last_seen }}</code></td>
-            <td>
-              {% set x = xp_map.get(u.id) %}
-              {% if x %}
-                <b>L{{ x.level }}</b> • {{ x.total_xp }} XP
-              {% else %}
-                <span class="muted">(no XP yet)</span>
-              {% endif %}
-            </td>
-            <td>
-              <form method="post" action="/admin/api/users/grant" style="display:flex; gap:6px; align-items:center;">
-                <input type="hidden" name="user_id" value="{{ u.id }}" />
-                <input name="amount" type="number" step="1" style="width:90px" placeholder="amount" required />
-                <input name="reason" style="width:160px" placeholder="reason" />
-                <button>Grant</button>
-              </form>
-            </td>
-            <td>
-              <form method="post" action="/admin/api/users/adjust" style="display:flex; gap:6px; align-items:center;">
-                <input type="hidden" name="user_id" value="{{ u.id }}" />
-                <input name="delta" type="number" step="1" style="width:90px" placeholder="+/-" required />
-                <input name="reason" style="width:140px" placeholder="reason" value="admin_adjust" />
-                <button>Apply</button>
-              </form>
-            </td>
-            <td>
-              <form method="post" action="/admin/api/users/xp/adjust" style="display:flex; gap:6px; align-items:center;">
-                <input type="hidden" name="user_id" value="{{ u.id }}" />
-                <input name="delta" type="number" step="1" style="width:90px" placeholder="+/-" required />
-                <input name="reason" style="width:140px" placeholder="reason" value="admin_xp_adjust" />
-                <button>Apply</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="muted">No users yet. Create one above or use the Chat Console.</p>
-    {% endif %}
-  </div>
-</section>
-
-<section class="card">
-  <h2>Audit Log</h2>
-  <p class="muted">View recent point transactions (grant/spend/adjust) per user.</p>
-
-  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-    <label>
-      User:
-      <select id="audit_user">
-        {% for u in users %}
-          <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
-        {% endfor %}
-      </select>
-    </label>
-
-    <label>
-      Limit:
-      <input id="audit_limit" type="number" step="1" value="50" style="width:90px" />
-    </label>
-
-    <button type="button" id="audit_load">Load</button>
-    <span id="audit_status" class="muted"></span>
-  </div>
-
-  <div style="overflow:auto; margin-top:10px;">
-    <table class="table" id="audit_table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Type</th>
-          <th>Delta</th>
-          <th>Reason</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td colspan="5" class="muted">Click “Load”.</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="card">
-  <h2>XP Audit Log</h2>
-  <p class="muted">View recent XP transactions per user.</p>
-
-  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-    <label>
-      User:
-      <select id="xp_audit_user">
-        {% for u in users %}
-          <option value="{{ u.id }}">{{ u.name }} (#{{ u.id }})</option>
-        {% endfor %}
-      </select>
-    </label>
-
-    <label>
-      Limit:
-      <input id="xp_audit_limit" type="number" step="1" value="50" style="width:90px" />
-    </label>
-
-    <button type="button" id="xp_audit_load">Load</button>
-    <span id="xp_audit_status" class="muted"></span>
-  </div>
-
-  <div style="overflow:auto; margin-top:10px;">
-    <table class="table" id="xp_audit_table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Delta</th>
-          <th>Reason</th>
-          <th>Source</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td colspan="5" class="muted">Click Load.</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="card">
-  <h2>Redeems</h2>
-  <div style="display:flex; gap:20px; flex-wrap:wrap;">
-    <div style="flex:1; min-width:320px;">
-      <h3>Add / Update Redeem</h3>
-      <form method="post" action="/admin/api/redeems/upsert">
-        <input name="key" placeholder="key (e.g., tts)" required />
-        <input name="display_name" placeholder="Display Name" required />
-        <input name="cost" type="number" step="1" placeholder="Cost" required />
-        <input name="cooldown_s" type="number" step="1" placeholder="Cooldown (sec)" value="0" />
-        <label><input type="checkbox" name="enabled" value="1" checked /> Enabled</label>
-        <button type="submit">Save</button>
-      </form>
-    </div>
-    <div style="flex:2; min-width:360px;">
-      <h3>Registered</h3>
-      {% if redeems %}
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Key</th><th>Name</th><th>Cost</th><th>Cooldown</th><th>Enabled</th><th>Toggle</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in redeems %}
-          <tr>
-            <td><code>{{ r.key }}</code></td>
-            <td>{{ r.display_name }}</td>
-            <td>{{ r.cost }}</td>
-            <td>{{ r.cooldown_s if r.cooldown_s is defined else 0 }}s</td>
-            <td>{{ 'Yes' if r.enabled else 'No' }}</td>
-            <td>
-              <form method="post" action="/admin/api/redeems/toggle" style="display:inline-block">
-                <input type="hidden" name="key" value="{{ r.key }}" />
-                <input type="hidden" name="enabled" value="{{ 0 if r.enabled else 1 }}" />
-                <button>{{ 'Disable' if r.enabled else 'Enable' }}</button>
-              </form>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+    <div class="card">
+      <h2>Manage Users ({{ users|length }} total)</h2>
+      {% if users %}
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Points</th>
+              <th>XP / Level</th>
+              <th>Grant Points</th>
+              <th>Adjust XP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td>
+                <strong>{{ u.name }}</strong><br>
+                <span class="muted text-sm">ID: {{ u.id }} • Last seen: {{ u.last_seen.strftime('%Y-%m-%d %H:%M') if u.last_seen else 'Never' }}</span>
+              </td>
+              <td>
+                {% if u.points %}
+                  <strong>{{ u.points.balance }}</strong> pts
+                {% else %}
+                  <span class="muted">0 pts</span>
+                {% endif %}
+              </td>
+              <td>
+                {% set x = xp_map.get(u.id) %}
+                {% if x %}
+                  <strong>Level {{ x.level }}</strong><br>
+                  <span class="muted text-sm">{{ x.total_xp }} XP</span>
+                {% else %}
+                  <span class="muted">No XP</span>
+                {% endif %}
+              </td>
+              <td>
+                <form method="post" action="/admin/api/users/grant" class="form-inline">
+                  <input type="hidden" name="user_id" value="{{ u.id }}" />
+                  <input name="amount" type="number" step="1" style="width:100px" placeholder="Amount" required />
+                  <button class="btn btn-sm btn-success">Grant</button>
+                </form>
+              </td>
+              <td>
+                <form method="post" action="/admin/api/users/xp/adjust" class="form-inline">
+                  <input type="hidden" name="user_id" value="{{ u.id }}" />
+                  <input name="delta" type="number" step="1" style="width:100px" placeholder="+/-" required />
+                  <button class="btn btn-sm btn-primary">Adjust</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-        <p class="muted">No redeems registered yet.</p>
+        <p class="muted">No users yet. Create one above.</p>
       {% endif %}
     </div>
   </div>
-</section>
+
+  <!-- Tab: TTS Lines -->
+  <div class="tab-content" id="tab-tts">
+    <div class="card">
+      <h2>TTS Lines Editor</h2>
+      <p>Edit spin and prize announcement lines. Backups are auto-created in <code>./data/backups</code>.</p>
+      <form id="tts-lines-form" method="post" action="/admin/api/tts-lines/save">
+        <div class="grid grid-2">
+          <div>
+            <h3>Spin Lines</h3>
+            <textarea id="spin_lines" name="spin_lines" rows="12" placeholder="One line per entry..."></textarea>
+            <div id="spin_backups" class="muted text-sm mt-2"></div>
+          </div>
+          <div>
+            <h3>Prize Lines</h3>
+            <textarea id="prize_lines" name="prize_lines" rows="12" placeholder="One line per entry..."></textarea>
+            <div id="prize_backups" class="muted text-sm mt-2"></div>
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <button type="submit" class="btn btn-success">💾 Save Lines</button>
+          <span class="status" id="tts-save-result"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tab: Tools -->
+  <div class="tab-content" id="tab-tools">
+    <div class="card">
+      <h2>Quick Spin Tester</h2>
+      <p>Test the prize wheel without spending points or enforcing cooldowns.</p>
+      <form id="quickspin" method="post" action="/admin/api/spin/quick" class="form-inline">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input name="user" placeholder="Tester" value="Tester" />
+        </div>
+        <button type="submit" class="btn btn-primary">🎰 Queue Spin</button>
+        <span id="quickspin-result" class="status"></span>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tab: Audit Logs -->
+  <div class="tab-content" id="tab-audit">
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>Points Audit Log</h2>
+        <div class="form-inline" style="margin-bottom: 16px;">
+          <div class="form-group">
+            <label class="form-label">User</label>
+            <select id="audit_user">
+              {% for u in users %}
+                <option value="{{ u.id }}">{{ u.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Limit</label>
+            <input id="audit_limit" type="number" value="50" style="width:100px" />
+          </div>
+          <button type="button" id="audit_load" class="btn btn-primary">Load</button>
+          <span id="audit_status" class="status"></span>
+        </div>
+        <div class="table-container">
+          <table class="table" id="audit_table">
+            <thead>
+              <tr><th>ID</th><th>Type</th><th>Delta</th><th>Reason</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5" class="muted">Click "Load" to view transactions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>XP Audit Log</h2>
+        <div class="form-inline" style="margin-bottom: 16px;">
+          <div class="form-group">
+            <label class="form-label">User</label>
+            <select id="xp_audit_user">
+              {% for u in users %}
+                <option value="{{ u.id }}">{{ u.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Limit</label>
+            <input id="xp_audit_limit" type="number" value="50" style="width:100px" />
+          </div>
+          <button type="button" id="xp_audit_load" class="btn btn-primary">Load</button>
+          <span id="xp_audit_status" class="status"></span>
+        </div>
+        <div class="table-container">
+          <table class="table" id="xp_audit_table">
+            <thead>
+              <tr><th>ID</th><th>Delta</th><th>Reason</th><th>Source</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="5" class="muted">Click "Load" to view transactions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
-  (function(){
-    const form = document.getElementById('quickspin');
-    const out  = document.getElementById('quickspin-result');
-    if(!form) return;
-    form.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      out.textContent = 'queuing…';
-      const fd = new FormData(form);
-      try{
-        const token = new URLSearchParams(location.search).get('token') || '';
-        const url = token ? ('/admin/api/spin/quick?token=' + encodeURIComponent(token)) : '/admin/api/spin/quick';
-        const resp = await fetch(url, { method:'POST', body: fd });
-        const data = await resp.json();
-        if(data && data.ok) out.textContent = 'queued #' + data.queue_id;
-        else out.textContent = 'error';
-      }catch(err){
-        out.textContent = 'error';
-      }
-    });
-  })();
-</script>
+// Tab Switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
 
-<script>
-  (function(){
-    const token = new URLSearchParams(location.search).get('token') || '';
-    const hdrs = token ? {'x-admin-token': token} : {};
+// Edit Redeem
+document.querySelectorAll('.edit-redeem').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('redeem-key').value = btn.dataset.key;
+    document.getElementById('redeem-display').value = btn.dataset.display;
+    document.getElementById('redeem-cost').value = btn.dataset.cost;
+    document.getElementById('redeem-cooldown').value = btn.dataset.cooldown;
+    document.getElementById('redeem-enabled').checked = btn.dataset.enabled === '1';
+    document.getElementById('redeem-key').focus();
+  });
+});
 
-    async function load(){
-      const r = await fetch('/admin/api/tts-lines/get' + (token?('?token='+encodeURIComponent(token)):'') , {headers: hdrs});
+// Clear Redeem Form
+document.getElementById('clear-redeem-form').addEventListener('click', () => {
+  document.getElementById('redeem-form').reset();
+});
+
+// Delete Redeem Forms
+document.querySelectorAll('.delete-redeem-form').forEach(form => {
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      const r = await fetch(form.action, { method: 'POST', body: fd });
+      if (r.ok) location.reload();
+      else alert('Error deleting redeem');
+    } catch (err) {
+      alert('Error: ' + err);
+    }
+  });
+});
+
+// Quick Spin
+document.getElementById('quickspin').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('quickspin-result');
+  out.textContent = 'queuing…';
+  const fd = new FormData(e.target);
+  try {
+    const r = await fetch(e.target.action, { method: 'POST', body: fd });
+    const j = await r.json();
+    out.textContent = j.ok ? ('✅ Queued #' + j.queue_id) : '❌ Error';
+  } catch (err) {
+    out.textContent = '❌ Error';
+  }
+});
+
+// TTS Lines
+(async function() {
+  async function loadTTS() {
+    const r = await fetch('/admin/api/tts-lines/get');
+    const j = await r.json();
+    if (!j.ok) return;
+    document.getElementById('spin_lines').value = j.spin_lines || '';
+    document.getElementById('prize_lines').value = j.prize_lines || '';
+    document.getElementById('spin_backups').textContent = 'Backups: ' + (j.spin_backups || []).join(', ');
+    document.getElementById('prize_backups').textContent = 'Backups: ' + (j.prize_backups || []).join(', ');
+  }
+
+  document.getElementById('tts-lines-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('tts-save-result');
+    out.textContent = 'saving…';
+    const fd = new FormData(e.target);
+    try {
+      const r = await fetch(e.target.action, { method: 'POST', body: fd });
       const j = await r.json();
-      if(!j.ok) return;
-      document.getElementById('spin_lines').value = j.spin_lines || '';
-      document.getElementById('prize_lines').value = j.prize_lines || '';
-      document.getElementById('spin_backups').textContent = 'Spin backups: ' + (j.spin_backups||[]).join(', ');
-      document.getElementById('prize_backups').textContent = 'Prize backups: ' + (j.prize_backups||[]).join(', ');
+      out.textContent = j.ok ? '✅ Saved' : ('❌ ' + (j.detail || 'Error'));
+      await loadTTS();
+    } catch (err) {
+      out.textContent = '❌ Error';
     }
+  });
 
-    document.getElementById('tts-lines-form').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const out = document.getElementById('tts-save-result');
-      out.textContent = 'saving…';
-      const fd = new FormData(e.target);
-      try{
-        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
-        const j = await r.json();
-        out.textContent = j.ok ? 'saved ✅' : ('error: ' + (j.detail||''));
-        await load();
-      }catch(err){ out.textContent = 'error: ' + err; }
-    });
+  loadTTS();
+})();
 
-    document.getElementById('restore_spin').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const out = document.getElementById('restore_spin_result');
-      out.textContent = 'restoring…';
-      const fd = new FormData(e.target);
-      try{
-        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
-        const j = await r.json();
-        out.textContent = j.ok ? 'restored ✅' : ('error: ' + (j.detail||''));
-        await load();
-      }catch(err){ out.textContent = 'error: ' + err; }
-    });
-
-    document.getElementById('restore_prize').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const out = document.getElementById('restore_prize_result');
-      out.textContent = 'restoring…';
-      const fd = new FormData(e.target);
-      try{
-        const r = await fetch(e.target.action + (token?('?token='+encodeURIComponent(token)):'') , {method:'POST', body: fd, headers: hdrs});
-        const j = await r.json();
-        out.textContent = j.ok ? 'restored ✅' : ('error: ' + (j.detail||''));
-        await load();
-      }catch(err){ out.textContent = 'error: ' + err; }
-    });
-
-    load();
-  })();
-</script>
-
-<script>
-  (function(){
-    const token = new URLSearchParams(location.search).get('token') || '';
-    const hdrs = token ? {'x-admin-token': token} : {};
-
-    const btn = document.getElementById('audit_load');
-    const sel = document.getElementById('audit_user');
-    const limitEl = document.getElementById('audit_limit');
-    const status = document.getElementById('audit_status');
-    const tbody = document.querySelector('#audit_table tbody');
-
-    async function loadAudit(){
-      if(!sel) return;
-      const user_id = sel.value;
-      const limit = limitEl && limitEl.value ? parseInt(limitEl.value, 10) : 50;
-      status.textContent = 'loading…';
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
-
-      try{
-        const qs = new URLSearchParams();
-        qs.set('user_id', user_id);
-        qs.set('limit', String(isNaN(limit) ? 50 : limit));
-        if(token) qs.set('token', token);
-
-        const r = await fetch('/admin/api/users/transactions?' + qs.toString(), {headers: hdrs});
-        const j = await r.json();
-        if(!j.ok){
-          status.textContent = 'error';
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">Error.</td></tr>';
-          return;
-        }
-
-        const rows = j.transactions || [];
-        if(rows.length === 0){
-          status.textContent = '0 rows';
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">No transactions.</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = '';
-        for(const t of rows){
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${t.id}</td>
-            <td>${t.type}</td>
-            <td>${t.delta}</td>
-            <td>${(t.reason||'')}</td>
-            <td><code>${t.created_at}</code></td>
-          `;
-          tbody.appendChild(tr);
-        }
-        status.textContent = rows.length + ' row(s)';
-      }catch(err){
-        status.textContent = 'error';
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error: ' + err + '</td></tr>';
-      }
+// Audit Logs
+document.getElementById('audit_load').addEventListener('click', async () => {
+  const userId = document.getElementById('audit_user').value;
+  const limit = document.getElementById('audit_limit').value;
+  const status = document.getElementById('audit_status');
+  const tbody = document.querySelector('#audit_table tbody');
+  
+  status.textContent = 'loading…';
+  tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+  
+  try {
+    const r = await fetch(`/admin/api/users/transactions?user_id=${userId}&limit=${limit}`);
+    const j = await r.json();
+    if (!j.ok) throw new Error();
+    
+    const rows = j.transactions || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">No transactions found.</td></tr>';
+      status.textContent = '0 rows';
+      return;
     }
+    
+    tbody.innerHTML = rows.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td><span class="badge badge-success">${t.type}</span></td>
+        <td>${t.delta > 0 ? '+' : ''}${t.delta}</td>
+        <td>${t.reason || ''}</td>
+        <td class="text-sm muted">${new Date(t.created_at).toLocaleString()}</td>
+      </tr>
+    `).join('');
+    status.textContent = `✅ ${rows.length} row(s)`;
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">Error loading data.</td></tr>';
+    status.textContent = '❌ Error';
+  }
+});
 
-    if(btn) btn.addEventListener('click', loadAudit);
-  })();
-</script>
-
-<script>
-  (function(){
-    const token = new URLSearchParams(location.search).get('token') || '';
-    const hdrs = token ? {'x-admin-token': token} : {};
-
-    const btn = document.getElementById('xp_audit_load');
-    const sel = document.getElementById('xp_audit_user');
-    const limitEl = document.getElementById('xp_audit_limit');
-    const status = document.getElementById('xp_audit_status');
-    const tbody = document.querySelector('#xp_audit_table tbody');
-
-    async function loadXpAudit(){
-      if(!sel) return;
-      const user_id = sel.value;
-      const limit = limitEl && limitEl.value ? parseInt(limitEl.value, 10) : 50;
-      status.textContent = 'loading…';
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
-
-      try{
-        const qs = new URLSearchParams();
-        qs.set('user_id', user_id);
-        qs.set('limit', String(isNaN(limit) ? 50 : limit));
-        if(token) qs.set('token', token);
-
-        const r = await fetch('/admin/api/users/xp/transactions?' + qs.toString(), {headers: hdrs});
-        const j = await r.json();
-        if(!j.ok){
-          status.textContent = 'error';
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">Error.</td></tr>';
-          return;
-        }
-
-        const rows = j.transactions || [];
-        if(rows.length === 0){
-          status.textContent = '0 rows';
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">No XP transactions.</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = '';
-        for(const t of rows){
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${t.id}</td>
-            <td>${t.delta}</td>
-            <td>${(t.reason||'')}</td>
-            <td>${(t.source||'')}</td>
-            <td><code>${t.created_at}</code></td>
-          `;
-          tbody.appendChild(tr);
-        }
-        status.textContent = rows.length + ' row(s)';
-      }catch(err){
-        status.textContent = 'error';
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">Error: ' + err + '</td></tr>';
-      }
+// XP Audit
+document.getElementById('xp_audit_load').addEventListener('click', async () => {
+  const userId = document.getElementById('xp_audit_user').value;
+  const limit = document.getElementById('xp_audit_limit').value;
+  const status = document.getElementById('xp_audit_status');
+  const tbody = document.querySelector('#xp_audit_table tbody');
+  
+  status.textContent = 'loading…';
+  tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+  
+  try {
+    const r = await fetch(`/admin/api/users/xp/transactions?user_id=${userId}&limit=${limit}`);
+    const j = await r.json();
+    if (!j.ok) throw new Error();
+    
+    const rows = j.transactions || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">No XP transactions found.</td></tr>';
+      status.textContent = '0 rows';
+      return;
     }
-
-    if(btn) btn.addEventListener('click', loadXpAudit);
-  })();
+    
+    tbody.innerHTML = rows.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td>${t.delta > 0 ? '+' : ''}${t.delta}</td>
+        <td>${t.reason || ''}</td>
+        <td><code>${t.source || ''}</code></td>
+        <td class="text-sm muted">${new Date(t.created_at).toLocaleString()}</td>
+      </tr>
+    `).join('');
+    status.textContent = `✅ ${rows.length} row(s)`;
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="5" class="muted">Error loading data.</td></tr>';
+    status.textContent = '❌ Error';
+  }
+});
 </script>
 
 {% endblock %}
