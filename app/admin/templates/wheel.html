@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pixel Prize Wheel</title>
+    <meta charset="utf-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: transparent; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif; 
+            height: 100vh; width: 100vw;
+        }
+        #wheel-container { 
+            position: relative; width: 100%; height: 100%; 
+        }
+        #wheel-image { 
+            position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            width: 80%; height: 80%; object-fit: contain;
+            transition: transform 4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        #wheel-image.spinning { 
+            animation: spin 4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(1440deg); }
+        }
+        #rain { 
+            position: absolute; top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            pointer-events: none; opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        #rain.active { opacity: 1; }
+        .coin { 
+            position: absolute; width: 20px; height: 20px; 
+            background: radial-gradient(circle, #ffd700, #ffed4e);
+            border-radius: 50%; box-shadow: 0 0 10px #ffd700;
+            animation: fall linear infinite;
+        }
+        @keyframes fall {
+            0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+        #prize-reveal { 
+            position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-size: 48px; font-weight: bold; 
+            color: #ffd700; text-shadow: 2px 2px 4px #000;
+            opacity: 0; transform: translate(-50%, -50%) scale(0.5);
+            transition: all 0.8s ease;
+        }
+        #prize-reveal.show { 
+            opacity: 1; transform: translate(-50%, -50%) scale(1);
+        }
+    </style>
+</head>
+<body>
+    <div id="wheel-container">
+        <img id="wheel-image" src="/static/wheel.png" alt="Prize Wheel">
+        <canvas id="rain"></canvas>
+        <div id="prize-reveal"></div>
+    </div>
+
+    <script>
+        const ws = new WebSocket('ws://' + location.host + '/ws/overlay');
+        const wheelImg = document.getElementById('wheel-image');
+        const rainCanvas = document.getElementById('rain');
+        const prizeReveal = document.getElementById('prize-reveal');
+        const ctx = rainCanvas.getContext('2d');
+        
+        rainCanvas.width = window.innerWidth;
+        rainCanvas.height = window.innerHeight;
+        
+        let rainActive = false;
+        let coins = [];
+        
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type !== 'wheel') return;
+            
+            console.log('Wheel:', msg.action);
+            
+            if (msg.action === 'rain-start') {
+                rainActive = true;
+                document.getElementById('rain').classList.add('active');
+                startRain();
+            }
+            else if (msg.action === 'rain-stop') {
+                rainActive = false;
+                document.getElementById('rain').classList.remove('active');
+                coins = [];
+            }
+            else if (msg.action === 'reveal') {
+                wheelImg.classList.remove('spinning');
+                prizeReveal.textContent = msg.prize || 'PRIZE!';
+                prizeReveal.classList.add('show');
+                setTimeout(() => prizeReveal.classList.remove('show'), 3000);
+            }
+        };
+        
+        function startRain() {
+            coins = [];
+            for (let i = 0; i < 50; i++) {
+                coins.push({
+                    x: Math.random() * rainCanvas.width,
+                    y: -50,
+                    speed: 5 + Math.random() * 5,
+                    size: 10 + Math.random() * 10,
+                    rotation: 0,
+                    rotSpeed: (Math.random() - 0.5) * 0.1
+                });
+            }
+            animateRain();
+        }
+        
+        function animateRain() {
+            if (!rainActive) return;
+            
+            ctx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+            
+            coins.forEach(coin => {
+                coin.y += coin.speed;
+                coin.rotation += coin.rotSpeed;
+                
+                if (coin.y > rainCanvas.height) {
+                    coin.y = -coin.size;
+                    coin.x = Math.random() * rainCanvas.width;
+                }
+                
+                ctx.save();
+                ctx.translate(coin.x, coin.y);
+                ctx.rotate(coin.rotation);
+                ctx.beginPath();
+                ctx.arc(0, 0, coin.size/2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffd700';
+                ctx.shadowColor = '#ffd700';
+                ctx.shadowBlur = 10;
+                ctx.fill();
+                ctx.restore();
+            });
+            
+            requestAnimationFrame(animateRain);
+        }
+        
+        // Auto-spin demo (remove in production)
+        setTimeout(() => {
+            wheelImg.classList.add('spinning');
+            setTimeout(() => wheelImg.classList.remove('spinning'), 4000);
+        }, 2000);
+    </script>
+</body>
+</html>
