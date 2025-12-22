@@ -1,78 +1,100 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Pixel SFX Player</title>
-    <meta charset="utf-8">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            background: transparent; 
-            overflow: hidden; 
-            font-family: Arial, sans-serif; 
-            height: 100vh; width: 100vw;
-        }
-        #sfx-container { 
-            position: relative; width: 100%; height: 100%; 
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }
-        .sfx-burst { 
-            position: absolute; width: 100px; height: 100px; 
-            background: radial-gradient(circle, #00ff88, #00cc66);
-            border-radius: 50%; opacity: 0;
-            animation: burst 0.6s ease-out forwards;
-        }
-        @keyframes burst {
-            0% { transform: scale(0); opacity: 1; }
-            100% { transform: scale(3); opacity: 0; }
-        }
-        #sound-name { 
-            font-size: 36px; font-weight: bold; 
-            color: #00ff88; text-shadow: 2px 2px 4px #000;
-            opacity: 0; transition: opacity 0.3s;
-        }
-        #sound-name.show { opacity: 1; }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay — SFX</title>
+  <style>
+    html, body { margin:0; background:transparent; overflow:hidden; }
+    #hud { position:fixed; right:8px; bottom:8px; font:11px/1.2 monospace; color:#9ad;
+           background:#0008; padding:6px 8px; border-radius:6px; pointer-events:none }
+  </style>
 </head>
 <body>
-    <div id="sfx-container">
-        <div id="sound-name"></div>
-    </div>
+  <div id="hud"></div>
+  <script>
+  (function(){
+    const hud = document.getElementById('hud');
+    function log(s){ hud.textContent = (hud.textContent ? hud.textContent + "\n" : "") + s; }
 
-    <script>
-        const ws = new WebSocket('ws://' + location.host + '/ws/overlay');
-        const sfxContainer = document.getElementById('sfx-container');
-        const soundName = document.getElementById('sound-name');
-        
-        function createBurst(x, y) {
-            const burst = document.createElement('div');
-            burst.className = 'sfx-burst';
-            burst.style.left = x + 'px';
-            burst.style.top = y + 'px';
-            sfxContainer.appendChild(burst);
-            setTimeout(() => burst.remove(), 600);
-        }
-        
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            
-            if (msg.type === 'sfx') {
-                // Multiple burst effects
-                for (let i = 0; i < 8; i++) {
-                    setTimeout(() => {
-                        createBurst(
-                            Math.random() * window.innerWidth,
-                            Math.random() * window.innerHeight
-                        );
-                    }, i * 50);
-                }
-            }
-            
-            if (msg.sound) {
-                soundName.textContent = msg.sound.toUpperCase();
-                soundName.classList.add('show');
-                setTimeout(() => soundName.classList.remove('show'), 1500);
-            }
-        };
-    </script>
+    // --- WebAudio loop (robust in OBS) ---
+    let AC = null, loopNode = null, loopGain = null, elAudio = null;
+
+    async function loopStart(url){
+      loopStop();
+      try{
+        AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+        await AC.resume();
+        log("loop: fetching " + url);
+        const resp = await fetch(url, {cache:'no-store'});
+        if(!resp.ok){ log("loop: fetch failed " + resp.status); throw new Error("HTTP "+resp.status); }
+        const arr = await resp.arrayBuffer();
+        const buf = await AC.decodeAudioData(arr);
+        loopNode = AC.createBufferSource();
+        loopNode.buffer = buf;
+        loopNode.loop = true;
+        loopGain = AC.createGain(); loopGain.gain.value = 1.0;
+        loopNode.connect(loopGain).connect(AC.destination);
+        loopNode.start(0);
+        log("loop: WebAudio started");
+      }catch(e){
+        log("loop: WebAudio failed, fallback -> <audio>: " + (e && e.message || e));
+        try{
+          elAudio = new Audio(url);
+          elAudio.loop = true;
+          elAudio.volume = 1.0;
+          await elAudio.play();
+          log("loop: <audio> playing");
+        }catch(e2){ log("loop: <audio> failed " + (e2 && e2.message || e2)); }
+      }
+    }
+    function loopStop(){
+      try{ if(loopNode){ loopNode.stop(0); loopNode.disconnect(); } }catch(_){}
+      try{ if(loopGain){ loopGain.disconnect(); } }catch(_){}
+      loopNode = null; loopGain = null;
+      try{ if(elAudio){ elAudio.pause(); elAudio.src=''; elAudio.load(); } }catch(_){}
+      elAudio = null;
+      log("loop: stopped");
+    }
+
+    // One-shot SFX
+    async function playOneShot(nameOrUrl){
+      let url = nameOrUrl;
+      if(!/^https?:/i.test(url) && !url.startsWith('/')) url = '/media/sounds/' + url;
+      try{
+        const a = new Audio(url);
+        a.volume = 1.0;
+        await a.play();
+        log("play: " + url);
+      }catch(e){ log("play failed: " + (e && e.message || e)); }
+    }
+
+    function wsConnect(){
+      const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/overlay/ws`);
+      ws.onopen = ()=> log("ws: connected");
+      ws.onclose = ()=> { log("ws: disconnected"); setTimeout(wsConnect, 1000); };
+      ws.onmessage = ev => {
+        try{
+          const msg = JSON.parse(ev.data);
+          if(!msg || msg.type !== 'sfx') return;
+          const act = msg.action || 'play';
+          if(act === 'play'){
+            // supports {name:'file.wav'} or {url:'/media/sounds/file.wav'}
+            const url = msg.url ? msg.url : ('/media/sounds/' + (msg.name || ''));
+            playOneShot(url);
+          }else if(act === 'loop-start'){
+            const url = msg.url ? msg.url : ('/media/sounds/' + (msg.name || ''));
+            loopStart(url);
+          }else if(act === 'loop-stop'){
+            loopStop();
+          }
+        }catch(_){}
+      };
+    }
+
+    wsConnect();
+  })();
+  </script>
 </body>
 </html>

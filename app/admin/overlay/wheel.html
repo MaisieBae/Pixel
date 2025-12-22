@@ -1,155 +1,258 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Pixel Prize Wheel</title>
-    <meta charset="utf-8">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            background: transparent; 
-            overflow: hidden; 
-            font-family: Arial, sans-serif; 
-            height: 100vh; width: 100vw;
-        }
-        #wheel-container { 
-            position: relative; width: 100%; height: 100%; 
-        }
-        #wheel-image { 
-            position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); 
-            width: 80%; height: 80%; object-fit: contain;
-            transition: transform 4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-        }
-        #wheel-image.spinning { 
-            animation: spin 4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
-        }
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(1440deg); }
-        }
-        #rain { 
-            position: absolute; top: 0; left: 0; 
-            width: 100%; height: 100%; 
-            pointer-events: none; opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        #rain.active { opacity: 1; }
-        .coin { 
-            position: absolute; width: 20px; height: 20px; 
-            background: radial-gradient(circle, #ffd700, #ffed4e);
-            border-radius: 50%; box-shadow: 0 0 10px #ffd700;
-            animation: fall linear infinite;
-        }
-        @keyframes fall {
-            0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
-            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-        }
-        #prize-reveal { 
-            position: absolute; top: 50%; left: 50%; 
-            transform: translate(-50%, -50%); 
-            font-size: 48px; font-weight: bold; 
-            color: #ffd700; text-shadow: 2px 2px 4px #000;
-            opacity: 0; transform: translate(-50%, -50%) scale(0.5);
-            transition: all 0.8s ease;
-        }
-        #prize-reveal.show { 
-            opacity: 1; transform: translate(-50%, -50%) scale(1);
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overlay — Wheel Rain</title>
+  <style>
+    html, body { margin:0; padding:0; background:transparent; overflow:hidden; }
+
+    /* Rain */
+    .rain { position: fixed; inset: 0; pointer-events: none; }
+    .drop { position: absolute; width: 96px; height: 96px; background-size: contain; background-repeat: no-repeat; background-position:center;
+            animation: fall 2.4s linear infinite; filter: drop-shadow(0 6px 14px rgba(0,0,0,.55)); }
+    @keyframes fall {
+      from { transform: translateY(-120px) rotate(0deg); opacity: .95; }
+      to   { transform: translateY(110vh) rotate(220deg); opacity: .95; }
+    }
+
+    /* Center stage */
+    #center {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      pointer-events:none;
+    }
+
+    /* One “stage” box so image + prize share the same center slot */
+    #stage {
+      position: relative;
+      width: 360px;
+      height: 360px;
+      display: grid;
+      place-items: center;
+    }
+
+    #big {
+      position:absolute;
+      inset:0;
+      background-size: contain;
+      background-repeat:no-repeat;
+      background-position:center;
+      filter: drop-shadow(0 12px 24px rgba(0,0,0,.6));
+      transition: transform .25s ease, opacity .25s ease;
+      opacity: 1;
+      transform: scale(1);
+    }
+    #big.hide {
+      opacity: 0;
+      transform: scale(.15);
+    }
+
+    /* Prize is truly centered, large, decorative */
+    #prize {
+      position:absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      text-align:center;
+
+      font: 900 64px/1.05 'Segoe UI', system-ui, sans-serif;
+      color: #ffe7a6;
+      text-shadow: 0 2px 0 #a00, 0 6px 14px rgba(0,0,0,.6);
+      white-space: nowrap;
+      padding: 8px 14px;
+      opacity: 0;
+      transition: opacity .15s ease, transform .15s ease;
+    }
+    #prize.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.02);
+    }
+
+    .shake { animation: shake 0.9s ease both; }
+    @keyframes shake {
+      0%{ transform: translate(-50%, -50%) scale(1.15) rotate(0deg); }
+      20%{ transform: translate(-49%, -50%) scale(1.15) rotate(3deg); }
+      40%{ transform: translate(-51%, -49%) scale(1.15) rotate(-3deg); }
+      60%{ transform: translate(-50%, -51%) scale(1.15) rotate(2deg); }
+      80%{ transform: translate(-50%, -50%) scale(1.15) rotate(-2deg); }
+      100%{ transform: translate(-50%, -50%) scale(1.0) rotate(0); }
+    }
+
+    /* Confetti */
+    .confetti { position: fixed; inset:0; pointer-events:none; }
+    .c {
+      position:absolute;
+      width:10px;
+      height:16px;
+      background: hsl(var(--h) 80% 60%);
+      transform: rotate(var(--r));
+      will-change: transform, opacity;
+      animation: conf 1.25s ease-out forwards;
+    }
+    @keyframes conf {
+      to { transform: translateY(64vh) rotate(calc(var(--r) + 280deg)); opacity: 0; }
+    }
+
+    #ws { position: fixed; left: 10px; bottom: 8px; font: 12px sans-serif; color: #9ad; opacity: .6; }
+  </style>
 </head>
 <body>
-    <div id="wheel-container">
-        <img id="wheel-image" src="/static/wheel.png" alt="Prize Wheel">
-        <canvas id="rain"></canvas>
-        <div id="prize-reveal"></div>
-    </div>
+  <div class="rain" id="rain"></div>
 
-    <script>
-        const ws = new WebSocket('ws://' + location.host + '/ws/overlay');
-        const wheelImg = document.getElementById('wheel-image');
-        const rainCanvas = document.getElementById('rain');
-        const prizeReveal = document.getElementById('prize-reveal');
-        const ctx = rainCanvas.getContext('2d');
-        
-        rainCanvas.width = window.innerWidth;
-        rainCanvas.height = window.innerHeight;
-        
-        let rainActive = false;
-        let coins = [];
-        
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type !== 'wheel') return;
-            
-            console.log('Wheel:', msg.action);
-            
-            if (msg.action === 'rain-start') {
-                rainActive = true;
-                document.getElementById('rain').classList.add('active');
-                startRain();
-            }
-            else if (msg.action === 'rain-stop') {
-                rainActive = false;
-                document.getElementById('rain').classList.remove('active');
-                coins = [];
-            }
-            else if (msg.action === 'reveal') {
-                wheelImg.classList.remove('spinning');
-                prizeReveal.textContent = msg.prize || 'PRIZE!';
-                prizeReveal.classList.add('show');
-                setTimeout(() => prizeReveal.classList.remove('show'), 3000);
-            }
-        };
-        
-        function startRain() {
-            coins = [];
-            for (let i = 0; i < 50; i++) {
-                coins.push({
-                    x: Math.random() * rainCanvas.width,
-                    y: -50,
-                    speed: 5 + Math.random() * 5,
-                    size: 10 + Math.random() * 10,
-                    rotation: 0,
-                    rotSpeed: (Math.random() - 0.5) * 0.1
-                });
-            }
-            animateRain();
-        }
-        
-        function animateRain() {
-            if (!rainActive) return;
-            
-            ctx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
-            
-            coins.forEach(coin => {
-                coin.y += coin.speed;
-                coin.rotation += coin.rotSpeed;
-                
-                if (coin.y > rainCanvas.height) {
-                    coin.y = -coin.size;
-                    coin.x = Math.random() * rainCanvas.width;
-                }
-                
-                ctx.save();
-                ctx.translate(coin.x, coin.y);
-                ctx.rotate(coin.rotation);
-                ctx.beginPath();
-                ctx.arc(0, 0, coin.size/2, 0, Math.PI * 2);
-                ctx.fillStyle = '#ffd700';
-                ctx.shadowColor = '#ffd700';
-                ctx.shadowBlur = 10;
-                ctx.fill();
-                ctx.restore();
-            });
-            
-            requestAnimationFrame(animateRain);
-        }
-        
-        // Auto-spin demo (remove in production)
-        setTimeout(() => {
-            wheelImg.classList.add('spinning');
-            setTimeout(() => wheelImg.classList.remove('spinning'), 4000);
-        }, 2000);
-    </script>
+  <div id="center">
+    <div id="stage">
+      <div id="big"></div>
+      <div id="prize"></div>
+    </div>
+  </div>
+
+  <div class="confetti" id="confetti"></div>
+  <div id="ws">WS: <span id="state">connecting…</span></div>
+
+  <script>
+  (function(){
+    const state   = document.getElementById('state');
+    const rain    = document.getElementById('rain');
+    const center  = document.getElementById('center');
+    const stage   = document.getElementById('stage');
+    const big     = document.getElementById('big');
+    const prizeEl = document.getElementById('prize');
+    const conf    = document.getElementById('confetti');
+
+    // --- timer management to prevent overlaps ---
+    let timers = [];
+    function later(ms, fn){
+      const id = setTimeout(fn, ms);
+      timers.push(id);
+      return id;
+    }
+    function cancelAllTimers(){
+      for (const id of timers) clearTimeout(id);
+      timers = [];
+    }
+
+    function wsConnect(){
+      const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/overlay/ws`);
+      ws.onopen = ()=> state.textContent = 'connected';
+      ws.onclose = ()=> { state.textContent = 'disconnected'; setTimeout(wsConnect, 1000); };
+      ws.onmessage = ev => { try { handle(JSON.parse(ev.data)); } catch(_){} };
+    }
+
+    function handle(msg){
+      if (!msg || msg.type !== 'wheel') return;
+      if (msg.action === 'rain-start') startRain(msg);
+      if (msg.action === 'rain-stop')  stopRain();
+      if (msg.action === 'reveal')     reveal(msg);
+    }
+
+    function startRain(msg){
+      stopRain();
+      const img = msg.image || '/admin/static/wheel/question.png';
+      for (let i=0;i<38;i++){
+        const d = document.createElement('div');
+        d.className = 'drop';
+        d.style.left = Math.random()*100 + 'vw';
+        d.style.animationDelay = (Math.random()*1.0) + 's';
+        d.style.opacity = (0.5 + Math.random()*0.5);
+        d.style.backgroundImage = `url(${img})`;
+        rain.appendChild(d);
+      }
+    }
+
+    function stopRain(){
+      rain.innerHTML = '';
+    }
+
+    function clearConfetti(){
+      // remove all confetti nodes (hard reset)
+      conf.innerHTML = '';
+    }
+
+    function burst(){
+      clearConfetti();
+
+      let remaining = 0;
+      for (let i=0;i<110;i++){
+        const c = document.createElement('div');
+        c.className = 'c';
+        c.style.left = (20+Math.random()*60)+'vw';
+        c.style.top  = (20+Math.random()*30)+'vh';
+        c.style.setProperty('--h', Math.floor(Math.random()*360));
+        c.style.setProperty('--r', Math.floor(Math.random()*180)+'deg');
+
+        remaining++;
+        c.addEventListener('animationend', () => {
+          try{ c.remove(); }catch(_){}
+          remaining--;
+          if (remaining <= 0) {
+            // if last one finished, ensure container is clean
+            clearConfetti();
+          }
+        }, { once:true });
+
+        conf.appendChild(c);
+      }
+
+      // safety cleanup (in case animationend doesn’t fire in OBS for any reason)
+      later(1800, clearConfetti);
+    }
+
+    function resetCenter(){
+      cancelAllTimers();
+      clearConfetti();
+
+      center.classList.remove('shake');
+      center.style.opacity = 0;
+
+      big.classList.remove('hide');
+      prizeEl.classList.remove('show');
+      prizeEl.textContent = '';
+    }
+
+    function reveal(msg){
+      // Hard reset so back-to-back spins don't stack timers/effects
+      resetCenter();
+
+      // Always stop rain when revealing
+      stopRain();
+
+      const img = msg.image || '/admin/static/wheel/question.png';
+      const prize = (msg.prize || '').trim();
+
+      big.style.backgroundImage = `url(${img})`;
+      center.style.opacity = 1;
+
+      // retrigger shake reliably
+      center.classList.remove('shake'); void center.offsetWidth; center.classList.add('shake');
+
+      const shakeMs = 900;
+
+      // At the SAME MOMENT:
+      // - burst confetti
+      // - hide question image
+      // - show prize centered in its place
+      later(shakeMs, () => {
+        burst();
+        big.classList.add('hide');
+        prizeEl.textContent = prize;
+        prizeEl.classList.add('show');
+      });
+
+      // Reset after display
+      later(10000, () => {
+        resetCenter();
+        // ensure stage is clean
+        big.style.backgroundImage = '';
+      });
+    }
+
+    wsConnect();
+  })();
+  </script>
 </body>
 </html>
