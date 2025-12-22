@@ -718,22 +718,7 @@ def create_app(settings: Settings) -> FastAPI:
                         except Exception:
                             pass
                     else:
-                        # Keep existing behavior: command responses go to TTS queue
-                        db.add(
-                            QueueItem(
-                                kind="tts",
-                                status="pending",
-                                payload_json={
-                                    "user": user,
-                                    "message": say_text,
-                                    "prefix": False,
-                                    "source": "cmd",
-                                },
-                            )
-                        )
-                        db.commit()
-
-                        # Also post the response back into Joystick chat so commands feel responsive on-site.
+                        # Send command confirmation to chat only (NOT to TTS)
                         if _js:
                             try:
                                 await _js.send_message(say_text)
