@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Tip Button Clicker",
+  "name": "Buzz Test",
   "version": "1.0",
-  "permissions": ["activeTab"],
+  "permissions": ["activeTab", "scripting"],
   "background": {
     "service_worker": "background.js"
   },
