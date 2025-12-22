@@ -105,10 +105,10 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "See /static/sfx for available sounds."}
 
     if cmd == "!clip":
-    payload = {"user": user}
-    result = rs.redeem(user, "clip", cooldown_s=None, queue_kind="clip", payload=payload)
-    if not result.get("ok"):
-        return {"ok": False, "say": result.get("error", "Clip failed")}
-    return {"ok": True, "say": "Clip requested."}
+        payload = {"user": user}
+        result = rs.redeem(user, "clip", cooldown_s=None, queue_kind="clip", payload=payload)
+        if not result.get("ok"):
+            return {"ok": False, "say": result.get("error", "Clip failed")}
+        return {"ok": True, "say": "Clip requested."}
 
     return {"ok": False, "say": "Unknown command. Try !help"}
