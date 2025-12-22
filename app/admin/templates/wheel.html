@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Wheel Overlay</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: transparent;
+      overflow: hidden;
+      font-family: 'Arial Black', sans-serif;
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+    }
+
+    /* Rain container */
+    #wheel-rain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: 0;
+      z-index: 10;
+    }
+
+    #wheel-rain.active {
+      /* opacity controlled by JS */
+    }
+
+    .wheel-drop {
+      position: absolute;
+      top: -20vh;
+      width: 100px;
+      height: auto;
+      opacity: 0.8;
+      animation: wheel-fall linear infinite;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+    }
+
+    @keyframes wheel-fall {
+      0% {
+        transform: translateY(0) rotate(0deg) scale(1);
+      }
+      50% {
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(120vh) rotate(720deg) scale(0.8);
+        opacity: 0;
+      }
+    }
+
+    /* Reveal wheel (center bounce) */
+    #wheel-reveal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      z-index: 20;
+      transition: none;
+    }
+
+    #wheel-reveal.hidden {
+      display: none;
+    }
+
+    #wheel-reveal img {
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      filter: drop-shadow(0 20px 40px rgba(255, 215, 0, 0.4));
+    }
+
+    #wheel-reveal.bounce-in {
+      display: block;
+      animation: wheel-bounce 1.2s cubic-bezier(0.17, 0.89, 0.32, 1.49);
+    }
+
+    @keyframes wheel-bounce {
+      0% {
+        transform: translate(-50%, -50%) scale(0) rotate(0deg);
+      }
+      50% {
+        transform: translate(-50%, -50%) scale(1.3) rotate(180deg);
+      }
+      70% {
+        transform: translate(-50%, -50%) scale(0.9) rotate(270deg);
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(1) rotate(360deg);
+      }
+    }
+
+    /* Prize text */
+    #wheel-prize-text {
+      position: fixed;
+      bottom: 15%;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
+      font-weight: 900;
+      color: #ffeb3b;
+      text-shadow: 
+        0 0 10px #ff6b35,
+        0 0 20px #ff6b35,
+        0 0 30px #c44569,
+        2px 2px 0 #000;
+      text-align: center;
+      letter-spacing: 0.1em;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 25;
+      transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      font-family: 'Arial Black', sans-serif;
+    }
+
+    #wheel-prize-text.hidden {
+      display: none;
+    }
+
+    #wheel-prize-text.visible {
+      display: block;
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+      animation: prize-glow 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes prize-glow {
+      0% {
+        text-shadow: 
+          0 0 10px #ff6b35,
+          0 0 20px #ff6b35,
+          0 0 30px #c44569,
+          2px 2px 0 #000;
+      }
+      100% {
+        text-shadow: 
+          0 0 20px #ffeb3b,
+          0 0 40px #ffeb3b,
+          0 0 60px #c44569,
+          4px 4px 0 #000;
+      }
+    }
+
+    /* Confetti canvas */
+    #confetti-canvas {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 15;
+    }
+  </style>
+</head>
+<body>
+  <!-- Rain effect -->
+  <div id="wheel-rain"></div>
+
+  <!-- Centered reveal wheel -->
+  <div id="wheel-reveal" class="hidden">
+    <img src="wheel.png" alt="Wheel">
+  </div>
+
+  <!-- Prize text -->
+  <div id="wheel-prize-text" class="hidden"></div>
+
+  <!-- Confetti -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <script>
+    // Config
+    const DEFAULT_WHEEL_IMAGE = 'wheel.png';
+    const WS_URL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/overlay/ws';
+    let ws = null;
+    let currentTimeouts = [];
+    let confettiCtx = null;
+    let confettiPieces = [];
+
+    // Connect to overlay websocket
+    function connect() {
+      ws = new WebSocket(WS_URL);
+      
+      ws.onopen = () => {
+        console.log('[Wheel] Connected to overlay bus');
+      };
+
+      ws.onmessage = handleMessage;
+      
+      ws.onclose = () => {
+        console.log('[Wheel] Disconnected, reconnecting...');
+        setTimeout(connect, 1000);
+      };
+    }
+
+    // Clear all pending timeouts
+    function clearTimeouts() {
+      currentTimeouts.forEach(id => clearTimeout(id));
+      currentTimeouts = [];
+    }
+
+    // Schedule with timeout tracking
+    function schedule(fn, delay) {
+      const id = setTimeout(fn, delay);
+      currentTimeouts.push(id);
+    }
+
+    // Get wheel image URL
+    function getWheelImage(msg) {
+      return msg.image || DEFAULT_WHEEL_IMAGE;
+    }
+
+    function handleMessage(event) {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type !== 'wheel') return;
+
+        console.log('[Wheel] Action:', msg.action, msg);
+
+        if (msg.action === 'rain-start') {
+          handleRainStart(msg);
+        } else if (msg.action === 'rain-stop') {
+          handleRainStop();
+        } else if (msg.action === 'reveal') {
+          handleReveal(msg);
+        }
+      } catch (e) {
+        console.error('[Wheel] Message error:', e);
+      }
+    }
+
+    function handleRainStart(msg) {
+      clearTimeouts();
+
+      const rainContainer = document.getElementById('wheel-rain');
+      rainContainer.innerHTML = '';
+      rainContainer.style.opacity = '0';
+      rainContainer.classList.add('active');
+
+      const imgUrl = getWheelImage(msg);
+
+      // Create 25 falling wheels
+      for (let i = 0; i < 25; i++) {
+        const drop = document.createElement('img');
+        drop.src = imgUrl;
+        drop.className = 'wheel-drop';
+        drop.style.left = Math.random() * 100 + '%';
+        drop.style.animationDuration = (3 + Math.random() * 2) + 's';
+        drop.style.animationDelay = (Math.random() * 2) + 's';
+        drop.style.width = (80 + Math.random() * 60) + 'px';
+        rainContainer.appendChild(drop);
+      }
+
+      // Fade in rain 400ms after SFX for polish
+      schedule(() => {
+        rainContainer.style.transition = 'opacity 0.6s ease-out';
+        rainContainer.style.opacity = '1';
+      }, 400);
+    }
+
+    function handleRainStop() {
+      const rainContainer = document.getElementById('wheel-rain');
+      if (!rainContainer.classList.contains('active')) return;
+
+      rainContainer.style.transition = 'opacity 0.5s ease-out';
+      rainContainer.style.opacity = '0';
+
+      // Clean up after fade
+      schedule(() => {
+        rainContainer.classList.remove('active');
+        rainContainer.innerHTML = '';
+      }, 600);
+    }
+
+    function handleReveal(msg) {
+      clearTimeouts();
+
+      const reveal = document.getElementById('wheel-reveal');
+      const prizeText = document.getElementById('wheel-prize-text');
+      const imgUrl = getWheelImage(msg);
+      const prize = msg.prize || 'Mystery Prize!';
+
+      // Reset state
+      reveal.className = 'hidden';
+      prizeText.className = 'hidden';
+      prizeText.textContent = prize;
+      reveal.querySelector('img').src = imgUrl;
+
+      // 1. Bounce wheel in after win SFX (400ms delay)
+      schedule(() => {
+        reveal.className = 'bounce-in';
+        startConfetti();
+      }, 400);
+
+      // 2. Show prize text after bounce settles (1400ms total)
+      schedule(() => {
+        prizeText.className = 'visible';
+      }, 1400);
+
+      // 3. Clear everything after 10s
+      schedule(() => {
+        reveal.className = 'hidden';
+        prizeText.className = 'hidden';
+        stopConfetti();
+        confettiPieces = [];
+      }, 10000);
+    }
+
+    // Confetti system
+    function startConfetti() {
+      const canvas = document.getElementById('confetti-canvas');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      confettiCtx = canvas.getContext('2d');
+      
+      // Create initial pieces
+      for (let i = 0; i < 100; i++) {
+        confettiPieces.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height - canvas.height,
+          vx: (Math.random() - 0.5) * 4,
+          vy: Math.random() * 3 + 2,
+          size: Math.random() * 8 + 4,
+          color: `hsl(${Math.random() * 60 + 10}, 90%, 60%)`,
+          rotation: Math.random() * 360,
+          rotSpeed: (Math.random() - 0.5) * 10
+        });
+      }
+      
+      confettiLoop();
+    }
+
+    function confettiLoop() {
+      if (!confettiCtx || confettiPieces.length === 0) return;
+
+      confettiCtx.clearRect(0, 0, confettiCtx.canvas.width, confettiCtx.canvas.height);
+
+      for (let i = confettiPieces.length - 1; i >= 0; i--) {
+        const p = confettiPieces[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05; // gravity
+        p.rotation += p.rotSpeed;
+
+        confettiCtx.save();
+        confettiCtx.translate(p.x, p.y);
+        confettiCtx.rotate(p.rotation * Math.PI / 180);
+        confettiCtx.fillStyle = p.color;
+        confettiCtx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+        confettiCtx.restore();
+
+        if (p.y > confettiCtx.canvas.height) {
+          confettiPieces.splice(i, 1);
+        }
+      }
+
+      if (confettiPieces.length > 0) {
+        requestAnimationFrame(confettiLoop);
+      }
+    }
+
+    function stopConfetti() {
+      confettiPieces = [];
+      if (confettiCtx) {
+        confettiCtx.clearRect(0, 0, confettiCtx.canvas.width, confettiCtx.canvas.height);
+      }
+    }
+
+    // Start connection
+    connect();
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      const canvas = document.getElementById('confetti-canvas');
+      if (canvas) {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+    });
+  </script>
+</body>
+</html>
