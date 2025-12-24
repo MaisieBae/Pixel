@@ -1,5 +1,5 @@
 // background.js
-const WS_URL = 'ws://192.168.1.127:8080/extension/ws';  // your bot
+const WS_URL = 'ws://192.168.1.127:8080/extension/ws';
 
 let ws = null;
 
@@ -24,25 +24,39 @@ function connect() {
 
     if (data.action === 'click_tip') {
       console.log('[BuzzExt] click_tip action received');
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      
+      // Query ALL joystick.tv tabs
+      chrome.tabs.query({ url: '*://joystick.tv/*' }, (tabs) => {
+        console.log('[BuzzExt] Found tabs:', tabs.length);
+        
         if (!tabs.length) {
-          console.warn('[BuzzExt] No active tab to send message to');
+          console.warn('[BuzzExt] No joystick.tv tabs found');
           return;
         }
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          { action: 'click_tip' },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              console.error(
-                '[BuzzExt] sendMessage error:',
-                chrome.runtime.lastError.message
-              );
-            } else {
-              console.log('[BuzzExt] content response:', response);
+        
+        // Send to all matching tabs
+        let sentCount = 0;
+        tabs.forEach((tab) => {
+          console.log(`[BuzzExt] Sending to tab ${tab.id}: ${tab.url}`);
+          
+          chrome.tabs.sendMessage(
+            tab.id,
+            { action: 'click_tip' },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                console.error(
+                  `[BuzzExt] Tab ${tab.id} error:`,
+                  chrome.runtime.lastError.message
+                );
+              } else {
+                console.log(`[BuzzExt] Tab ${tab.id} response:`, response);
+                sentCount++;
+              }
             }
-          }
-        );
+          );
+        });
+        
+        console.log(`[BuzzExt] Message sent to ${sentCount} tab(s)`);
       });
     }
   };

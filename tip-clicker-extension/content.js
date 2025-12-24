@@ -2,26 +2,40 @@
 console.log('[BuzzExt] content.js loaded on', window.location.href);
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[BuzzExt] content.js got message:', request);
+  console.log('[BuzzExt] *** MESSAGE RECEIVED ***', request);
 
   if (request.action === 'click_tip') {
-    // Try several selectors and log what we get
-    const btn1 = document.querySelector('button.lv-send-button');
-    const btn2 = document.querySelector('button.el-button.lvs-common-button.lv-send-button.el-button--primary.el-button--mini');
+    console.log('[BuzzExt] Processing click_tip action...');
+    
+    // Wait a moment for any dynamic content to load
+    setTimeout(() => {
+      // Try to find the button
+      let btn = document.querySelector('button.lv-send-button');
+      console.log('[BuzzExt] Button found:', btn);
 
-    console.log('[BuzzExt] btn1 (lv-send-button) =', btn1);
-    console.log('[BuzzExt] btn2 (full classes) =', btn2);
-
-    const btn = btn1 || btn2;
-
-    if (btn) {
-      btn.focus();
-      btn.click();
-      console.log('[BuzzExt] Tip button CLICKED!', btn);
-    } else {
-      console.warn('[BuzzExt] Tip button NOT found');
-    }
-
-    sendResponse({ success: !!btn });
+      if (btn) {
+        const isVisible = btn.offsetWidth > 0 && btn.offsetHeight > 0;
+        const isEnabled = !btn.disabled;
+        
+        console.log('[BuzzExt] Button state - visible:', isVisible, 'enabled:', isEnabled);
+        
+        if (isVisible && isEnabled) {
+          console.log('[BuzzExt] Clicking button NOW!');
+          btn.focus();
+          btn.click();
+          sendResponse({ success: true });
+        } else {
+          console.warn('[BuzzExt] Button not clickable');
+          sendResponse({ success: false, reason: 'not clickable' });
+        }
+      } else {
+        console.warn('[BuzzExt] Button NOT FOUND');
+        sendResponse({ success: false, reason: 'not found' });
+      }
+    }, 100);
+    
+    return true; // Keep channel open for async response
   }
 });
+
+console.log('[BuzzExt] Message listener registered');

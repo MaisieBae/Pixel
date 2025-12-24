@@ -2,14 +2,16 @@
   "manifest_version": 3,
   "name": "Buzz Test",
   "version": "1.0",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["*://joystick.tv/*"],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "matches": ["*://joystick.tv/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }
