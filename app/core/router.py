@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Sequence
+from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.core.points import PointsService
@@ -14,6 +15,9 @@ HELP_TEXT = (
     "Commands: !points, !tts <msg>, !pixel <msg>, !sound <name>, !listsounds [page], !spin, !xp, !level, !clip"
 )
 
+# Sounds per page for !listsounds command
+SOUNDS_PER_PAGE = 15
+
 
 def parse_words(text: str) -> list[str]:
     return [w for w in text.strip().split() if w]
@@ -21,6 +25,61 @@ def parse_words(text: str) -> list[str]:
 
 def is_command(text: str) -> bool:
     return text.strip().startswith("!")
+
+
+def get_available_sounds(settings: Settings) -> list[str]:
+    """Get list of all available sound files from the sounds directory."""
+    sounds_path = Path(settings.SOUNDS_DIR).resolve()
+    if not sounds_path.exists() or not sounds_path.is_dir():
+        return []
+    
+    # Get all audio files (common formats)
+    extensions = {'.wav', '.mp3', '.ogg', '.flac', '.m4a'}
+    sounds = []
+    
+    for file in sounds_path.iterdir():
+        if file.is_file() and file.suffix.lower() in extensions:
+            sounds.append(file.name)
+    
+    return sorted(sounds)
+
+
+def format_sounds_list(sounds: list[str], page: int = 1, per_page: int = SOUNDS_PER_PAGE) -> str:
+    """Format sounds list with pagination info."""
+    if not sounds:
+        return "No sounds available."
+    
+    total = len(sounds)
+    total_pages = (total + per_page - 1) // per_page  # Ceiling division
+    
+    # Validate page number
+    if page < 1:
+        page = 1
+    if page > total_pages:
+        page = total_pages
+    
+    # Calculate slice indices
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, total)
+    
+    # Get page of sounds
+    page_sounds = sounds[start_idx:end_idx]
+    
+    # Format output
+    sounds_str = ", ".join(page_sounds)
+    footer = f" | Page {page}/{total_pages} ({total} total)"
+    
+    # If message would be too long for chat, truncate the list
+    MAX_CHAT_LEN = 400
+    if len(sounds_str) + len(footer) > MAX_CHAT_LEN:
+        # Reduce list until it fits
+        while page_sounds and len(", ".join(page_sounds)) + len(footer) > MAX_CHAT_LEN:
+            page_sounds.pop()
+        sounds_str = ", ".join(page_sounds)
+        if len(page_sounds) < (end_idx - start_idx):
+            sounds_str += "..."
+    
+    return f"Sounds: {sounds_str}{footer}"
 
 
 def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
@@ -101,8 +160,19 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Spinning the wheel…"}
 
     if cmd == "!listsounds":
-        # existing behavior unchanged
-        return {"ok": True, "say": "See /static/sfx for available sounds."}
+        # Parse page number from args
+        page = 1
+        if args:
+            try:
+                page = int(args[0])
+            except ValueError:
+                return {"ok": False, "say": "Usage: !listsounds [page_number]"}
+        
+        # Get available sounds and format response
+        sounds = get_available_sounds(settings)
+        message = format_sounds_list(sounds, page=page, per_page=SOUNDS_PER_PAGE)
+        
+        return {"ok": True, "say": message}
 
     if cmd == "!points" or cmd == "!balance":
         ps = PointsService(db)
@@ -127,5 +197,3 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Sending a buzzie..."}
         
     return {"ok": False, "say": "Unknown command. Try !help"}
-
-
