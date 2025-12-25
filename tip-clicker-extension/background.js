@@ -2,6 +2,7 @@
 const WS_URL = 'ws://192.168.1.127:8080/extension/ws';
 
 let ws = null;
+let pingInterval = null;
 
 function connect() {
   console.log('[BuzzExt] Connecting to bot at', WS_URL);
@@ -9,6 +10,14 @@ function connect() {
 
   ws.onopen = () => {
     console.log('[BuzzExt] Connected to bot');
+    
+    // Start sending pings every 30 seconds to keep connection alive
+    pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('[BuzzExt] Sending ping');
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 30000);
   };
 
   ws.onmessage = (event) => {
@@ -19,6 +28,12 @@ function connect() {
       data = JSON.parse(event.data);
     } catch (e) {
       console.error('[BuzzExt] Invalid JSON:', event.data);
+      return;
+    }
+
+    // Ignore pong messages
+    if (data.type === 'pong') {
+      console.log('[BuzzExt] Received pong');
       return;
     }
 
@@ -67,6 +82,14 @@ function connect() {
 
   ws.onclose = () => {
     console.log('[BuzzExt] Disconnected from bot, reconnecting in 5s...');
+    
+    // Clear ping interval
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
+    }
+    
+    // Reconnect after delay
     setTimeout(connect, 5000);
   };
 }

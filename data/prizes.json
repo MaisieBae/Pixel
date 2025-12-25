@@ -1,42 +1,72 @@
 [
   {
-    "name": "50 Points",
-    "weight": 30,
+    "name": "50 Points!",
+    "weight": 8,
     "effects": [
       { "type": "points.grant", "amount": 50, "reason": "wheel" }
     ]
   },
   {
-    "name": "100 Points",
-    "weight": 20,
+    "name": "100 Points!",
+    "weight": 8,
     "effects": [
       { "type": "points.grant", "amount": 100, "reason": "wheel" }
     ]
   },
   {
-    "name": "Confetti Blast",
-    "weight": 15,
+    "name": "500 Points!",
+    "weight": 8,
     "effects": [
-      { "type": "osc.send", "address": "/avatar/parameters/Confetti", "value_type": "bool", "value": true }
+      { "type": "points.grant", "amount": 500, "reason": "wheel" }
     ]
   },
   {
-    "name": "Silly Honk",
-    "weight": 15,
+    "name": "Silly Honk!",
+    "weight": 35,
     "effects": [
       { "type": "osc.send", "address": "/avatar/parameters/Honk", "value_type": "int", "value": 1 }
     ]
   },
   {
-    "name": "Streamer Compliment",
-    "weight": 10,
+    "name": "Bad Joke!",
+    "weight": 40,
     "effects": []
   },
   {
-    "name": "Mystery Prize",
-    "weight": 10,
+    "name": "Ass tease!",
+    "weight": 20,
+    "effects": []
+  },
+  {
+    "name": "Pussy tease!",
+    "weight": 12,
+    "effects": []
+  },
+  {
+    "name": "Dildo Play!",
+    "weight": 12,
+    "effects": []
+  },
+  {
+    "name": "THE CAN!",
+    "weight": 20,
+    "effects": []
+  },
+  {
+    "name": "S u c c!",
+    "weight": 20,
+    "effects": []
+  },
+  {
+    "name": "Steppies!",
+    "weight": 28,
+    "effects": []
+  },
+  {
+    "name": "Buzzie Surprise!",
+    "weight": 25,
     "effects": [
-      { "type": "inventory.grant", "key": "mystery_token", "qty": 1 }
+      { "type": "extension.trigger", "action": "click_tip" }
     ]
   }
 ]
