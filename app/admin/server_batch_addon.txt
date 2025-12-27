@@ -1,0 +1,112 @@
+    # ---------- Batch Operations (v2.2.0) ----------
+    @admin.post("/api/users/batch-points")
+    async def api_users_batch_points(
+        request: Request,
+        operation: str = Form(...),  # 'add' or 'subtract'
+        amount: int = Form(...),
+        target: str = Form("all"),  # 'all' or 'specific'
+        user_ids: str = Form(""),  # comma-separated user IDs if target='specific'
+        reason: str = Form("batch_admin"),
+        allow_negative: bool = Form(False),
+        db: Session = Depends(get_db),
+    ):
+        """Batch adjust points for multiple users.
+        
+        Args:
+            operation: 'add' or 'subtract'
+            amount: Amount of points (always positive)
+            target: 'all' for all users, 'specific' for selected users
+            user_ids: Comma-separated user IDs when target='specific'
+            reason: Reason for transaction log
+            allow_negative: Allow negative balances
+        """
+        _admin_auth(settings, request)
+        from app.admin.batch_operations import batch_adjust_points
+        
+        # Validate inputs
+        operation = (operation or "").strip().lower()
+        if operation not in ("add", "subtract"):
+            return JSONResponse({"ok": False, "error": "Operation must be 'add' or 'subtract'"}, status_code=400)
+        
+        amount = abs(int(amount))
+        if amount <= 0:
+            return JSONResponse({"ok": False, "error": "Amount must be greater than 0"}, status_code=400)
+        
+        # Calculate delta based on operation
+        delta = amount if operation == "add" else -amount
+        
+        # Parse user IDs if specific target
+        parsed_user_ids = None
+        if target == "specific":
+            try:
+                parsed_user_ids = [int(uid.strip()) for uid in (user_ids or "").split(",") if uid.strip()]
+                if not parsed_user_ids:
+                    return JSONResponse({"ok": False, "error": "No user IDs provided"}, status_code=400)
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "Invalid user IDs format"}, status_code=400)
+        
+        # Execute batch operation
+        results = batch_adjust_points(
+            db=db,
+            delta=delta,
+            user_ids=parsed_user_ids,
+            reason=str(reason or "batch_admin"),
+            allow_negative=bool(allow_negative),
+        )
+        
+        return JSONResponse({"ok": True, **results})
+    
+    @admin.post("/api/users/batch-xp")
+    async def api_users_batch_xp(
+        request: Request,
+        operation: str = Form(...),  # 'add' or 'subtract'
+        amount: int = Form(...),
+        target: str = Form("all"),  # 'all' or 'specific'
+        user_ids: str = Form(""),  # comma-separated user IDs if target='specific'
+        reason: str = Form("batch_admin"),
+        db: Session = Depends(get_db),
+    ):
+        """Batch adjust XP for multiple users.
+        
+        Args:
+            operation: 'add' or 'subtract'
+            amount: Amount of XP (always positive)
+            target: 'all' for all users, 'specific' for selected users
+            user_ids: Comma-separated user IDs when target='specific'
+            reason: Reason for transaction log
+        """
+        _admin_auth(settings, request)
+        from app.admin.batch_operations import batch_adjust_xp
+        
+        # Validate inputs
+        operation = (operation or "").strip().lower()
+        if operation not in ("add", "subtract"):
+            return JSONResponse({"ok": False, "error": "Operation must be 'add' or 'subtract'"}, status_code=400)
+        
+        amount = abs(int(amount))
+        if amount <= 0:
+            return JSONResponse({"ok": False, "error": "Amount must be greater than 0"}, status_code=400)
+        
+        # Calculate delta based on operation
+        delta = amount if operation == "add" else -amount
+        
+        # Parse user IDs if specific target
+        parsed_user_ids = None
+        if target == "specific":
+            try:
+                parsed_user_ids = [int(uid.strip()) for uid in (user_ids or "").split(",") if uid.strip()]
+                if not parsed_user_ids:
+                    return JSONResponse({"ok": False, "error": "No user IDs provided"}, status_code=400)
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "Invalid user IDs format"}, status_code=400)
+        
+        # Execute batch operation
+        results = batch_adjust_xp(
+            db=db,
+            settings=settings,
+            delta=delta,
+            user_ids=parsed_user_ids,
+            reason=str(reason or "batch_admin"),
+        )
+        
+        return JSONResponse({"ok": True, **results})
