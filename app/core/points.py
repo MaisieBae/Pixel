@@ -34,9 +34,8 @@ class PointsService:
         else:
             user.last_seen = datetime.utcnow()
 
-        self.db.commit()
-
         # Grant starting points only once, for brand new users
+        # Do this BEFORE committing so it happens in the same transaction
         if (
             is_new
             and self.settings is not None
@@ -44,7 +43,15 @@ class PointsService:
         ):
             start_amount = int(getattr(self.settings, "POINTS_START_AMOUNT", 0) or 0)
             if start_amount > 0:
-                self.grant(user.id, amount=start_amount, reason="start")
+                # Get the points record we just created and update it directly
+                pts = self.db.get(Points, user.id)
+                if pts:
+                    pts.balance = start_amount
+                    # Add a transaction record for the starting points
+                    self.db.add(Transaction(user_id=user.id, type="grant", delta=start_amount, reason="start"))
+
+        # Commit once after all operations are complete
+        self.db.commit()
 
         return user
 
