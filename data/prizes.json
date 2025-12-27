@@ -35,12 +35,16 @@
   {
     "name": "Ass tease!",
     "weight": 20,
-    "effects": []
+    "effects": [
+      { "type": "sfx.play", "sound": "niceass.wav" }
+    ]
   },
   {
     "name": "Pussy tease!",
     "weight": 12,
-    "effects": []
+    "effects": [
+      { "type": "sfx.play", "sound": "nicepussy.wav" }
+    ]
   },
   {
     "name": "Dildo Play!",
@@ -60,7 +64,9 @@
   {
     "name": "Steppies!",
     "weight": 28,
-    "effects": []
+    "effects": [
+      { "type": "sfx.play", "sound": "succ.mp3" }
+    ]
   },
   {
     "name": "Buzzie Surprise!",

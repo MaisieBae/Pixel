@@ -37,7 +37,8 @@ class EffectEngine:
         from app.core.effects.handlers.inventory_grant import InventoryGrantHandler
         from app.core.effects.handlers.osc_send import OscSendHandler
         from app.core.effects.handlers.points_grant import PointsGrantHandler
-        from app.core.effects.handlers.extension_trigger import ExtensionTriggerHandler
+        from app.core.effects.handlers.sfx_play import SfxPlayHandler
+        from app.core.extension_trigger import ExtensionTriggerHandler
 
         self._handlers: dict[str, EffectHandler] = {}
         for h in (PointsGrantHandler(), InventoryGrantHandler(), ExtensionTriggerHandler(), OscSendHandler()):
