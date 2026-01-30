@@ -41,7 +41,7 @@ class EffectEngine:
         from app.core.extension_trigger import ExtensionTriggerHandler
 
         self._handlers: dict[str, EffectHandler] = {}
-        for h in (PointsGrantHandler(), InventoryGrantHandler(), ExtensionTriggerHandler(), OscSendHandler()):
+        for h in (PointsGrantHandler(), InventoryGrantHandler(), ExtensionTriggerHandler(), OscSendHandler(), SfxPlayHandler()):
             if h.type:
                 self._handlers[h.type] = h
 
