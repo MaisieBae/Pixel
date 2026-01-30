@@ -189,11 +189,21 @@ def handle_chat(db: Session, settings: Settings, user: str, text: str) -> dict:
         return {"ok": True, "say": "Clip requested."}
         
     if cmd == "!buzz":
-        # Just queue it like other redeems
+        # Queue the extension trigger
         payload = {"user": user, "action": "click_tip"}
         result = rs.redeem(user, "remotetip", cooldown_s=None, queue_kind="extension", payload=payload)
         if not result.get("ok"):
             return {"ok": False, "say": result.get("error", "Buzzie failed!")}
+        
+        # Also queue the buzz sound
+        try:
+            actual = validate_sound_file(settings, "buzz.wav")
+            sound_payload = {"user": user, "sound": actual}
+            db.add(QueueItem(kind='sound', status='pending', payload_json=sound_payload))
+            db.commit()
+        except Exception:
+            pass  # Sound is optional, don't fail the command if buzz.wav is missing
+        
         return {"ok": True, "say": "Sending a buzzie..."}
         
     return {"ok": False, "say": "Unknown command. Try !help"}
